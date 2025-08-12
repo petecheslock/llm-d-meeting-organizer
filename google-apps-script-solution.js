@@ -54,7 +54,7 @@ function organizeMeetingFiles() {
     
     // Process each meeting group
     for (const [configKey, groupData] of Object.entries(groupedFiles)) {
-      const { config, files: groupFiles } = groupData;
+      const { config, files: groupFiles, isChat } = groupData;
       console.log(`Processing ${groupFiles.length} files for "${configKey}"`);
       
       // Get target folder (create subfolder if needed)
@@ -77,11 +77,15 @@ function organizeMeetingFiles() {
         });
       }
       
-      // Send Slack notification (to debug channel if in debug mode)
-      if (CONFIG.DEBUG_MODE) {
-        sendDebugSlackNotification(configKey, config, filesToNotify);
+      // Send Slack notification only for non-Chat files
+      if (!isChat) {
+        if (CONFIG.DEBUG_MODE) {
+          sendDebugSlackNotification(configKey, config, filesToNotify);
+        } else {
+          sendConfiguredSlackNotification(configKey, config, filesToNotify);
+        }
       } else {
-        sendConfiguredSlackNotification(configKey, config, filesToNotify);
+        console.log(`Skipping Slack notification for Chat files: "${configKey}"`);
       }
       
       console.log(`Completed processing for "${configKey}"`);
@@ -134,29 +138,44 @@ function findMeetingFiles() {
 function findMatchingConfig(title) {
   for (const [prefix, config] of Object.entries(CONFIG.MEETING_CONFIGS)) {
     if (title.includes(prefix)) {
-      return { prefix, config };
+      return { prefix, config, isChat: title.includes('Chat') };
     }
   }
   return null;
 }
 
 /**
- * Group files by their meeting configuration, only including complete pairs
+ * Group files by their meeting configuration, handling Chat files separately
  */
 function groupFilesByMeetingConfig(files) {
   const grouped = {};
+  const chatFiles = {};
   
   files.forEach(file => {
     const match = findMatchingConfig(file.title);
     if (match) {
-      const { prefix, config } = match;
-      if (!grouped[prefix]) {
-        grouped[prefix] = {
-          config,
-          files: []
-        };
+      const { prefix, config, isChat } = match;
+      
+      if (isChat) {
+        // Handle Chat files separately - they don't need pairs
+        if (!chatFiles[prefix]) {
+          chatFiles[prefix] = {
+            config,
+            files: [],
+            isChat: true
+          };
+        }
+        chatFiles[prefix].files.push(file);
+      } else {
+        // Handle regular files that need pairs
+        if (!grouped[prefix]) {
+          grouped[prefix] = {
+            config,
+            files: []
+          };
+        }
+        grouped[prefix].files.push(file);
       }
-      grouped[prefix].files.push(file);
     }
   });
   
@@ -172,6 +191,12 @@ function groupFilesByMeetingConfig(files) {
     } else {
       console.log(`Incomplete pair for "${prefix}" - Notes: ${hasNotes}, Recording: ${hasRecording} - skipping until both are available`);
     }
+  }
+  
+  // Add all Chat files to complete groups (they don't need pairs)
+  for (const [prefix, chatData] of Object.entries(chatFiles)) {
+    console.log(`Chat files found for "${prefix}": ${chatData.files.length} files`);
+    completeGroups[prefix + '_chat'] = chatData;
   }
   
   return completeGroups;
