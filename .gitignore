@@ -1,0 +1,35 @@
+# Dependencies
+node_modules/
+functions/node_modules/
+
+# Environment variables
+.env
+.env.local
+
+# Firebase
+.firebase/
+firebase-debug.log
+firebase-debug.*.log
+
+# Compiled output
+functions/lib/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Configuration files with sensitive data
+config.js
+config-actual.js
+config-real.js
+config-production.js
+*-config-real.*
+*-config-actual.*
+*-sensitive.*

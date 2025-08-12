@@ -1,0 +1,27 @@
+display_information:
+  name: LLM-D Meeting Organizer
+  description: Automatically organizes meeting recordings and sends notifications to appropriate Slack channels
+  background_color: "#4A154B"
+  long_description: >
+    This app automates the organization of LLM-D meeting recordings by monitoring a Google Drive folder,
+    moving files to appropriate destinations based on meeting type, and sending notifications to relevant
+    Slack channels. Supports multiple meeting types including sig-autoscaling and community meetings.
+
+features:
+  bot_user:
+    display_name: LLM-D Meeting Organizer
+    always_online: false
+
+oauth_config:
+  scopes:
+    bot:
+      - incoming-webhook
+      - chat:write
+      - chat:write.public
+
+settings:
+  incoming_webhooks:
+    incoming_webhooks_enabled: true
+  org_deploy_enabled: false
+  socket_mode_enabled: false
+  token_rotation_enabled: false
