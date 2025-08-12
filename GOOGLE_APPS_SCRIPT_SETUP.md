@@ -16,7 +16,6 @@ The Google Apps Script will:
 - Slack workspace with webhook permissions
 - Shared Google Drive folder for organizing files
 - **YouTube channel** (optional, for automatic video uploads)
-- **Google Cloud Project** with YouTube Data API v3 enabled (for YouTube uploads)
 
 ## Setup Instructions
 
@@ -60,41 +59,14 @@ community: https://hooks.slack.com/services/T123/B456/abc123
 
 **Skip this step if you don't want automatic YouTube uploads.**
 
-#### 3.1: Create Google Cloud Project & Enable YouTube API
+#### 3.1: Enable YouTube Advanced Service in Apps Script
 
-1. Go to [Google Cloud Console](https://console.cloud.google.com/)
-2. Create a new project or use existing one
-3. Enable the **YouTube Data API v3**:
-   - Go to "APIs & Services" → "Library"
-   - Search for "YouTube Data API v3"
-   - Click "Enable"
+1. In your Google Apps Script project, click on "Services" (+ icon) in the left sidebar
+2. Find "YouTube Data API" and click "Add"
+3. Keep the default identifier "YouTube"
+4. The YouTube Advanced Service will handle authentication automatically
 
-#### 3.2: Create OAuth2 Credentials
-
-1. Go to "APIs & Services" → "Credentials"
-2. Click "Create Credentials" → "OAuth 2.0 Client IDs"
-3. Configure consent screen if prompted:
-   - User Type: External
-   - App name: "LLM-D Meeting Organizer"
-   - Add your email as test user
-4. Create OAuth client:
-   - Application type: **Desktop application**
-   - Name: "LLM-D YouTube Uploader"
-5. Download the JSON credentials file
-
-#### 3.3: Get Refresh Token
-
-1. Install Google OAuth2 Playground or use curl
-2. **Using OAuth2 Playground** (easier):
-   - Go to [OAuth2 Playground](https://developers.google.com/oauthplayground/)
-   - Click gear icon → check "Use your own OAuth credentials"
-   - Enter your Client ID and Client Secret from step 3.2
-   - In "Select & authorize APIs" → enter: `https://www.googleapis.com/auth/youtube.upload`
-   - Click "Authorize APIs" and follow the flow
-   - Click "Exchange authorization code for tokens"
-   - Copy the **refresh_token** (save this!)
-
-#### 3.4: Get YouTube Channel and Playlist IDs
+#### 3.2: Get YouTube Channel and Playlist IDs
 
 1. **Channel ID**: Go to your YouTube channel → About tab → copy Channel ID
 2. **Playlist ID**: 
@@ -139,14 +111,7 @@ const CONFIG = {
   },
   
   // Optional: Default webhook for error notifications
-  DEFAULT_WEBHOOK: 'https://hooks.slack.com/services/YOUR/DEFAULT/WEBHOOK',
-  
-  // YouTube API Configuration (required only if any meeting has uploadToYoutube: true)
-  YOUTUBE: {
-    clientId: 'your-client-id.apps.googleusercontent.com',
-    clientSecret: 'your-client-secret',
-    refreshToken: 'your-refresh-token'
-  }
+  DEFAULT_WEBHOOK: 'https://hooks.slack.com/services/YOUR/DEFAULT/WEBHOOK'
 };
 ```
 
@@ -156,22 +121,38 @@ const CONFIG = {
 - Add more meeting configurations as needed
 - Each meeting prefix gets moved to its exact target folder - no subfolder creation
 - **YouTube upload is optional** - only configure for meetings you want automatically uploaded
-- If any meeting has `uploadToYoutube: true`, you must provide the YOUTUBE configuration section
 - YouTube uploads happen **before** file movement for safety
 
-### Step 6: Enable Google Drive API
+### Step 6: Enable Required APIs
 
 1. In the Apps Script editor, click on "Services" (+ icon) in the left sidebar
 2. Find "Drive API" and click "Add"
 3. Keep the default identifier "Drive"
+4. **If YouTube uploads are enabled**: Also add "YouTube Data API" (should already be added from Step 3.1)
 
-### Step 7: Test the Script (Debug Mode)
+### Step 7: Test YouTube Authorization (If Enabled)
+
+**If you have any meetings configured with `uploadToYoutube: true`, complete this step first:**
+
+1. **Authorize YouTube Access**:
+   - Select `testYouTubeAuthorization` from the function dropdown
+   - Click the ▶️ "Run" button
+   - When prompted, grant YouTube permissions:
+     - Click "Review permissions"
+     - Choose your Google account
+     - Click "Advanced" → "Go to LLM-D Meeting File Organizer (unsafe)"
+     - Click "Allow"
+     - **Important**: Make sure to grant YouTube permissions when asked
+2. Check the execution logs - you should see "✅ YouTube authorization successful!"
+3. **This step establishes the OAuth connection for YouTube uploads**
+
+### Step 8: Test the Script (Debug Mode)
 
 1. Save the script (Ctrl+S or Cmd+S)
-2. **First, test in debug mode** - Run the `testDebugMode` function:
+2. **Test in debug mode** - Run the `testDebugMode` function:
    - Select `testDebugMode` from the function dropdown
    - Click the ▶️ "Run" button
-3. Grant permissions when prompted:
+3. Grant remaining permissions when prompted (if you haven't already):
    - Click "Review permissions"
    - Choose your Google account
    - Click "Advanced" → "Go to LLM-D Meeting File Organizer (unsafe)"
@@ -182,7 +163,7 @@ const CONFIG = {
    - Verify that files are detected and configurations are correct
    - YouTube uploads will be logged but not executed in debug mode
 
-### Step 8: Test Production Mode
+### Step 9: Test Production Mode
 
 1. **After debug mode testing passes**, test with real file movement:
    - Ensure `DEBUG_MODE: false` in your CONFIG object
@@ -194,7 +175,7 @@ const CONFIG = {
 3. Check that the real Slack notification is sent to the correct channel
 4. **If YouTube upload is enabled**: Verify the recording was uploaded to YouTube and added to the playlist
 
-### Step 9: Setup Automatic Scheduling (Cron Job Equivalent)
+### Step 10: Setup Automatic Scheduling (Cron Job Equivalent)
 
 1. **Only after successful production testing**, set up automation:
    - Run the `setupAutomaticTrigger` function:
@@ -203,7 +184,7 @@ const CONFIG = {
 2. This creates a time-based trigger that runs `organizeMeetingFiles` every 15 minutes
 3. This trigger acts as your "cron job" for automatic file organization
 
-### Step 10: Verify Complete Setup
+### Step 11: Verify Complete Setup
 
 1. Wait 15 minutes for the automatic trigger to run, or manually run `organizeMeetingFiles`
 2. Check the execution logs in "Executions" tab to see recent runs
@@ -265,9 +246,8 @@ const CONFIG = {
 - Check execution logs for errors
 
 **YouTube upload issues:**
-- Verify YouTube Data API v3 is enabled in Google Cloud Console
-- Check that OAuth2 credentials are correct
-- Ensure refresh token is valid (they can expire)
+- Verify YouTube Data API is enabled in Apps Script Services
+- Ensure you have permission to upload to the specified channel
 - Verify channel ID and playlist ID are correct
 - Check DEFAULT_WEBHOOK for specific YouTube error messages
 - YouTube uploads are rate-limited - large files may take time

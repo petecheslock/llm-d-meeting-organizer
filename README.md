@@ -43,7 +43,6 @@ The application:
 - Slack workspace with webhook permissions
 - Shared Google Drive folder for organizing files
 - **YouTube channel** (optional, for automatic video uploads)
-- **Google Cloud Project** with YouTube Data API v3 enabled (for YouTube uploads)
 
 ## Files in This Repository
 
@@ -59,4 +58,4 @@ The application:
 The script only requires:
 - **Google Drive**: Read/write access to organize files
 - **Slack**: Webhook URLs for notifications
-- **YouTube Data API v3**: OAuth2 access for video uploads (optional)
+- **YouTube Data API**: Advanced Service access for video uploads (optional)

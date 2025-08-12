@@ -64,14 +64,5 @@ const CONFIG = {
   },
   
   // Default webhook for error notifications and debug testing
-  DEFAULT_WEBHOOK: 'YOUR_DEFAULT_WEBHOOK_URL',
-  
-  // YouTube API Configuration (required for video uploads)
-  YOUTUBE: {
-    // OAuth2 client credentials for YouTube Data API v3
-    clientId: 'YOUR_YOUTUBE_CLIENT_ID',
-    clientSecret: 'YOUR_YOUTUBE_CLIENT_SECRET',
-    // Refresh token for authentication (obtain via OAuth2 flow)
-    refreshToken: 'YOUR_YOUTUBE_REFRESH_TOKEN'
-  }
+  DEFAULT_WEBHOOK: 'YOUR_DEFAULT_WEBHOOK_URL'
 };

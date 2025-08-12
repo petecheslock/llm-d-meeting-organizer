@@ -423,10 +423,15 @@ function sendErrorNotification(errorMessage) {
  * Check if YouTube configuration is available
  */
 function hasYouTubeConfig() {
-  return CONFIG.YOUTUBE && 
-         CONFIG.YOUTUBE.clientId && 
-         CONFIG.YOUTUBE.clientSecret && 
-         CONFIG.YOUTUBE.refreshToken;
+  // With YouTube Advanced Service, we just need to check if it's enabled
+  try {
+    // Try to access the YouTube service - will throw if not enabled
+    YouTube.Search.list('id', { maxResults: 1 });
+    return true;
+  } catch (error) {
+    console.error('YouTube Advanced Service not available:', error);
+    return false;
+  }
 }
 
 /**
@@ -448,15 +453,6 @@ function uploadVideosToYoutube(recordingFiles, config) {
       
       console.log(`Starting YouTube upload for: ${fileData.title}`);
       
-      // Get access token
-      const accessToken = getYouTubeAccessToken();
-      if (!accessToken) {
-        console.error(`Failed to get YouTube access token for ${fileData.title}`);
-        sendErrorNotification(`Failed to get YouTube access token for ${fileData.title}`);
-        allUploadsSucceeded = false;
-        continue;
-      }
-      
       // Get file blob
       const file = DriveApp.getFileById(fileData.id);
       const blob = file.getBlob();
@@ -465,8 +461,8 @@ function uploadVideosToYoutube(recordingFiles, config) {
       const videoTitle = fileData.title;
       const videoDescription = generateVideoDescription();
       
-      // Upload to YouTube
-      const videoId = uploadVideoToYoutube(blob, videoTitle, videoDescription, accessToken);
+      // Upload to YouTube using Advanced Service
+      const videoId = uploadVideoToYoutube(blob, videoTitle, videoDescription);
       
       if (videoId) {
         console.log(`Successfully uploaded to YouTube: ${videoTitle} (ID: ${videoId})`);
@@ -477,7 +473,7 @@ function uploadVideosToYoutube(recordingFiles, config) {
         // Add to playlist if configured
         if (config.youtubePlaylistId) {
           try {
-            addVideoToPlaylist(videoId, config.youtubePlaylistId, accessToken);
+            addVideoToPlaylist(videoId, config.youtubePlaylistId);
           } catch (playlistError) {
             console.error(`Failed to add video to playlist:`, playlistError);
             sendErrorNotification(`Failed to add video ${videoTitle} to playlist: ${playlistError.toString()}`);
@@ -500,38 +496,13 @@ function uploadVideosToYoutube(recordingFiles, config) {
   return allUploadsSucceeded;
 }
 
-/**
- * Get YouTube access token using refresh token
- */
-function getYouTubeAccessToken() {
-  try {
-    const response = UrlFetchApp.fetch('https://oauth2.googleapis.com/token', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded'
-      },
-      payload: [
-        'client_id=' + encodeURIComponent(CONFIG.YOUTUBE.clientId),
-        'client_secret=' + encodeURIComponent(CONFIG.YOUTUBE.clientSecret),
-        'refresh_token=' + encodeURIComponent(CONFIG.YOUTUBE.refreshToken),
-        'grant_type=refresh_token'
-      ].join('&')
-    });
-    
-    const data = JSON.parse(response.getContentText());
-    return data.access_token;
-  } catch (error) {
-    console.error('Failed to get YouTube access token:', error);
-    return null;
-  }
-}
 
 /**
- * Upload video to YouTube
+ * Upload video to YouTube using Advanced Service
  */
-function uploadVideoToYoutube(blob, title, description, accessToken) {
+function uploadVideoToYoutube(blob, title, description) {
   try {
-    const metadata = {
+    const resource = {
       snippet: {
         title: title,
         description: description,
@@ -542,28 +513,8 @@ function uploadVideoToYoutube(blob, title, description, accessToken) {
       }
     };
     
-    const response = UrlFetchApp.fetch('https://www.googleapis.com/upload/youtube/v3/videos?uploadType=multipart&part=snippet,status', {
-      method: 'POST',
-      headers: {
-        'Authorization': 'Bearer ' + accessToken,
-        'Content-Type': 'multipart/related; boundary="youtube_boundary"'
-      },
-      payload: [
-        '--youtube_boundary',
-        'Content-Type: application/json; charset=UTF-8',
-        '',
-        JSON.stringify(metadata),
-        '',
-        '--youtube_boundary',
-        'Content-Type: ' + blob.getContentType(),
-        '',
-        blob.getBytes(),
-        '--youtube_boundary--'
-      ].join('\r\n')
-    });
-    
-    const data = JSON.parse(response.getContentText());
-    return data.id;
+    const response = YouTube.Videos.insert(resource, 'snippet,status', blob);
+    return response.id;
   } catch (error) {
     console.error('Failed to upload video to YouTube:', error);
     return null;
@@ -571,11 +522,11 @@ function uploadVideoToYoutube(blob, title, description, accessToken) {
 }
 
 /**
- * Add video to YouTube playlist
+ * Add video to YouTube playlist using Advanced Service
  */
-function addVideoToPlaylist(videoId, playlistId, accessToken) {
+function addVideoToPlaylist(videoId, playlistId) {
   try {
-    const payload = {
+    const resource = {
       snippet: {
         playlistId: playlistId,
         resourceId: {
@@ -585,15 +536,7 @@ function addVideoToPlaylist(videoId, playlistId, accessToken) {
       }
     };
     
-    UrlFetchApp.fetch('https://www.googleapis.com/youtube/v3/playlistItems?part=snippet', {
-      method: 'POST',
-      headers: {
-        'Authorization': 'Bearer ' + accessToken,
-        'Content-Type': 'application/json'
-      },
-      payload: JSON.stringify(payload)
-    });
-    
+    YouTube.PlaylistItems.insert(resource, 'snippet');
     console.log(`Added video ${videoId} to playlist ${playlistId}`);
   } catch (error) {
     console.error(`Failed to add video to playlist:`, error);
@@ -630,6 +573,34 @@ function markAsUploadedToYoutube(fileId, videoId) {
   } catch (error) {
     console.error(`Error marking file ${fileId} as uploaded:`, error);
     sendErrorNotification(`Error marking file ${fileId} as uploaded: ${error.toString()}`);
+  }
+}
+
+/**
+ * Test YouTube authorization - run this once to authorize the YouTube service
+ * This will prompt for OAuth consent and establish the authorization
+ */
+function testYouTubeAuthorization() {
+  try {
+    console.log('Testing YouTube authorization...');
+    
+    // Simple API call to test authorization
+    YouTube.Search.list('id', {
+      q: 'test',
+      maxResults: 1
+    });
+    
+    console.log('✅ YouTube authorization successful!');
+    console.log('YouTube Advanced Service is properly configured and authorized.');
+    
+    return true;
+  } catch (error) {
+    console.error('❌ YouTube authorization failed:', error);
+    console.log('Make sure you have:');
+    console.log('1. Added YouTube Data API service in Apps Script');
+    console.log('2. Completed the OAuth consent flow when prompted');
+    
+    return false;
   }
 }
 
