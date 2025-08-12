@@ -84,7 +84,7 @@ community: https://hooks.slack.com/services/T123/B456/abc123
 
 ### Step 5: Configure the Script
 
-Update the `CONFIG` object at the top of the script with your actual folder IDs and webhook URLs:
+Update the `CONFIG` section in `config.example.js` and save as `config.js` in your project.
 
 ```javascript
 const CONFIG = {
