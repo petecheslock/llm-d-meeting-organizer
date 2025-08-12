@@ -54,12 +54,24 @@ const CONFIG = {
     '[PUBLIC] llm-d Community Meeting': {
       targetFolderId: 'YOUR_TARGET_FOLDER_ID',
       slackWebhook: 'YOUR_SLACK_WEBHOOK_URL',
-      slackChannel: '#community'
+      slackChannel: '#community',
+      youtubeChannelId: 'YOUR_YOUTUBE_CHANNEL_ID',
+      youtubePlaylistId: 'YOUR_YOUTUBE_PLAYLIST_ID',
+      uploadToYoutube: true
     }
     // Add more meeting configurations as needed
-    // Format: 'meeting prefix': { targetFolderId, slackWebhook, slackChannel }
+    // Format: 'meeting prefix': { targetFolderId, slackWebhook, slackChannel, youtubeChannelId?, youtubePlaylistId?, uploadToYoutube? }
   },
   
   // Default webhook for error notifications and debug testing
-  DEFAULT_WEBHOOK: 'YOUR_DEFAULT_WEBHOOK_URL'
+  DEFAULT_WEBHOOK: 'YOUR_DEFAULT_WEBHOOK_URL',
+  
+  // YouTube API Configuration (required for video uploads)
+  YOUTUBE: {
+    // OAuth2 client credentials for YouTube Data API v3
+    clientId: 'YOUR_YOUTUBE_CLIENT_ID',
+    clientSecret: 'YOUR_YOUTUBE_CLIENT_SECRET',
+    // Refresh token for authentication (obtain via OAuth2 flow)
+    refreshToken: 'YOUR_YOUTUBE_REFRESH_TOKEN'
+  }
 };

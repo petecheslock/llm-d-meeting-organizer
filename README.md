@@ -6,12 +6,13 @@
 
 - Automatically detects files with configured meeting patterns (e.g., `[PUBLIC] llm-d sig-*`)
 - Only processes complete pairs: both "Notes by Gemini" and "Recording" files must be present
+- **YouTube uploads** - automatically upload recordings to YouTube with playlist organization (optional)
 - Moves files to exact target folders you specify in Google Drive
 - Sends Slack notifications to corresponding channels via webhooks
+- **Duplicate protection** - prevents re-uploading already processed videos
+- **Error notifications** - sends alerts to your private channel for any issues
 - Runs every 15 minutes automatically
-- **100% free** - runs on Google's free tier
-- **Simple setup** - no CLI tools or deployment required
-- **Debug mode** - test safely without moving files
+- **Debug mode** - test safely without moving files or uploading videos
 
 ## Quick Start
 
@@ -21,7 +22,7 @@
 4. **Test first**: Run `testDebugMode()` to verify configuration without moving files
 5. **Run setup**: Execute `setupAutomaticTrigger()` to enable automatic scheduling
 
-📖 **Full setup instructions**: See `GOOGLE_APPS_SCRIPT_SETUP.md`
+📖 **Full setup instructions**: See [GOOGLE_APPS_SCRIPT_SETUP.md](./GOOGLE_APPS_SCRIPT_SETUP.md)
 
 ## File Processing
 
@@ -30,25 +31,19 @@ The application:
 1. Searches for files matching configured meeting patterns (e.g., `[PUBLIC] llm-d sig-*`, `[PUBLIC] llm-d Community Meeting`)
 2. Groups files by meeting configuration
 3. Only processes complete pairs where both "Notes by Gemini" and "Recording" files are present
-4. Moves all matching files to the exact target folder specified in configuration
-5. Posts notification to the corresponding Slack channel via webhook
-6. Supports debug mode for safe testing without file movement
-
-## Benefits vs Traditional Solutions
-
-| Feature | Google Apps Script | Firebase/Cloud Functions |
-|---------|-------------------|-------------------------|
-| **Cost** | Free | $2-5/month |
-| **Setup Complexity** | Copy & paste | CLI, service accounts, deployment |
-| **Maintenance** | Edit in browser | Code deployments |
-| **Google Drive Access** | Native | Service account setup |
-| **Scheduling** | Built-in triggers | Cloud Scheduler setup |
+4. **Uploads recordings to YouTube** (if configured) with automatic playlist organization
+5. Moves all matching files to the exact target folder specified in configuration
+6. Posts notification to the corresponding Slack channel via webhook
+7. **Tracks uploaded videos** to prevent duplicates and handle failures gracefully
+8. Supports debug mode for safe testing without file movement or uploads
 
 ## Prerequisites
 
 - Google Workspace account
 - Slack workspace with webhook permissions
 - Shared Google Drive folder for organizing files
+- **YouTube channel** (optional, for automatic video uploads)
+- **Google Cloud Project** with YouTube Data API v3 enabled (for YouTube uploads)
 
 ## Files in This Repository
 
@@ -64,9 +59,4 @@ The application:
 The script only requires:
 - **Google Drive**: Read/write access to organize files
 - **Slack**: Webhook URLs for notifications
-
-Security features:
-- Configuration kept in separate `config.js` file
-- Debug mode for safe testing
-- Error notifications to monitoring webhook
-- No service accounts, API keys, or complex authentication required
+- **YouTube Data API v3**: OAuth2 access for video uploads (optional)

@@ -62,6 +62,34 @@ function organizeMeetingFiles() {
       
       let filesToNotify = groupFiles;
       
+      // Upload recording to YouTube BEFORE moving files
+      let youtubeUploadSuccess = true;
+      if (config.uploadToYoutube && hasYouTubeConfig()) {
+        const recordingFiles = groupFiles.filter(file => file.title.includes('Recording'));
+        if (recordingFiles.length > 0) {
+          if (CONFIG.DEBUG_MODE) {
+            console.log(`🐛 DEBUG: Would upload ${recordingFiles.length} recording(s) to YouTube for "${configKey}"`);
+            recordingFiles.forEach(file => {
+              console.log(`🐛 DEBUG: Would upload: ${file.title}`);
+            });
+          } else {
+            try {
+              youtubeUploadSuccess = uploadVideosToYoutube(recordingFiles, config);
+            } catch (error) {
+              console.error(`YouTube upload failed for "${configKey}":`, error);
+              sendErrorNotification(`YouTube upload failed for "${configKey}": ${error.toString()}`);
+              youtubeUploadSuccess = false;
+            }
+          }
+        }
+      }
+      
+      // Only proceed with file movement if YouTube upload succeeded (or wasn't attempted)
+      if (!youtubeUploadSuccess) {
+        console.log(`Skipping file movement for "${configKey}" due to YouTube upload failure`);
+        continue;
+      }
+      
       // Move files to the folder (or log in debug mode)
       if (CONFIG.DEBUG_MODE) {
         logFileMoveOperations(groupFiles, targetFolder, configKey);
@@ -95,10 +123,8 @@ function organizeMeetingFiles() {
   } catch (error) {
     console.error('Error organizing meeting files:', error);
     
-    // Optional: Send error notification to a monitoring channel
-    if (CONFIG.DEFAULT_WEBHOOK) {
-      sendErrorNotification(error);
-    }
+    // Send error notification to monitoring channel
+    sendErrorNotification(`Main script error: ${error.toString()}`)
     
     throw error;
   }
@@ -353,7 +379,12 @@ function sendConfiguredSlackNotification(configKey, config, files) {
 /**
  * Send error notification to monitoring channel
  */
-function sendErrorNotification(error) {
+function sendErrorNotification(errorMessage) {
+  if (!CONFIG.DEFAULT_WEBHOOK) {
+    console.log('No DEFAULT_WEBHOOK configured, skipping error notification');
+    return;
+  }
+  
   const payload = {
     text: `🚨 Error in LLM-D Meeting File Organizer`,
     blocks: [
@@ -361,7 +392,14 @@ function sendErrorNotification(error) {
         type: "section",
         text: {
           type: "mrkdwn",
-          text: `🚨 *Error in LLM-D Meeting File Organizer*\n\`\`\`${error.toString()}\`\`\``
+          text: `🚨 *Error in LLM-D Meeting File Organizer*\n\`\`\`${errorMessage}\`\`\``
+        }
+      },
+      {
+        type: "section",
+        text: {
+          type: "mrkdwn",
+          text: `*Time:* ${new Date().toISOString()}`
         }
       }
     ]
@@ -375,9 +413,237 @@ function sendErrorNotification(error) {
       },
       payload: JSON.stringify(payload)
     });
+    console.log('Error notification sent to DEFAULT_WEBHOOK');
   } catch (e) {
     console.error('Failed to send error notification:', e);
   }
+}
+
+/**
+ * Check if YouTube configuration is available
+ */
+function hasYouTubeConfig() {
+  return CONFIG.YOUTUBE && 
+         CONFIG.YOUTUBE.clientId && 
+         CONFIG.YOUTUBE.clientSecret && 
+         CONFIG.YOUTUBE.refreshToken;
+}
+
+/**
+ * Upload videos to YouTube with duplicate protection
+ * @returns {boolean} true if all uploads succeeded, false if any failed
+ */
+function uploadVideosToYoutube(recordingFiles, config) {
+  let allUploadsSucceeded = true;
+  
+  for (const fileData of recordingFiles) {
+    try {
+      console.log(`Checking YouTube upload status for: ${fileData.title}`);
+      
+      // Check if already uploaded
+      if (isAlreadyUploadedToYoutube(fileData.id)) {
+        console.log(`Skipping ${fileData.title} - already uploaded to YouTube`);
+        continue;
+      }
+      
+      console.log(`Starting YouTube upload for: ${fileData.title}`);
+      
+      // Get access token
+      const accessToken = getYouTubeAccessToken();
+      if (!accessToken) {
+        console.error(`Failed to get YouTube access token for ${fileData.title}`);
+        sendErrorNotification(`Failed to get YouTube access token for ${fileData.title}`);
+        allUploadsSucceeded = false;
+        continue;
+      }
+      
+      // Get file blob
+      const file = DriveApp.getFileById(fileData.id);
+      const blob = file.getBlob();
+      
+      // Use filename as video title and generate description
+      const videoTitle = fileData.title;
+      const videoDescription = generateVideoDescription();
+      
+      // Upload to YouTube
+      const videoId = uploadVideoToYoutube(blob, videoTitle, videoDescription, accessToken);
+      
+      if (videoId) {
+        console.log(`Successfully uploaded to YouTube: ${videoTitle} (ID: ${videoId})`);
+        
+        // Mark as uploaded to prevent duplicates
+        markAsUploadedToYoutube(fileData.id, videoId);
+        
+        // Add to playlist if configured
+        if (config.youtubePlaylistId) {
+          try {
+            addVideoToPlaylist(videoId, config.youtubePlaylistId, accessToken);
+          } catch (playlistError) {
+            console.error(`Failed to add video to playlist:`, playlistError);
+            sendErrorNotification(`Failed to add video ${videoTitle} to playlist: ${playlistError.toString()}`);
+            // Don't fail the entire upload for playlist errors
+          }
+        }
+      } else {
+        console.error(`Failed to upload ${fileData.title} to YouTube - no video ID returned`);
+        sendErrorNotification(`Failed to upload ${fileData.title} to YouTube - no video ID returned`);
+        allUploadsSucceeded = false;
+      }
+      
+    } catch (error) {
+      console.error(`Failed to upload ${fileData.title} to YouTube:`, error);
+      sendErrorNotification(`Failed to upload ${fileData.title} to YouTube: ${error.toString()}`);
+      allUploadsSucceeded = false;
+    }
+  }
+  
+  return allUploadsSucceeded;
+}
+
+/**
+ * Get YouTube access token using refresh token
+ */
+function getYouTubeAccessToken() {
+  try {
+    const response = UrlFetchApp.fetch('https://oauth2.googleapis.com/token', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded'
+      },
+      payload: [
+        'client_id=' + encodeURIComponent(CONFIG.YOUTUBE.clientId),
+        'client_secret=' + encodeURIComponent(CONFIG.YOUTUBE.clientSecret),
+        'refresh_token=' + encodeURIComponent(CONFIG.YOUTUBE.refreshToken),
+        'grant_type=refresh_token'
+      ].join('&')
+    });
+    
+    const data = JSON.parse(response.getContentText());
+    return data.access_token;
+  } catch (error) {
+    console.error('Failed to get YouTube access token:', error);
+    return null;
+  }
+}
+
+/**
+ * Upload video to YouTube
+ */
+function uploadVideoToYoutube(blob, title, description, accessToken) {
+  try {
+    const metadata = {
+      snippet: {
+        title: title,
+        description: description,
+        categoryId: '28' // Science & Technology
+      },
+      status: {
+        privacyStatus: 'public'
+      }
+    };
+    
+    const response = UrlFetchApp.fetch('https://www.googleapis.com/upload/youtube/v3/videos?uploadType=multipart&part=snippet,status', {
+      method: 'POST',
+      headers: {
+        'Authorization': 'Bearer ' + accessToken,
+        'Content-Type': 'multipart/related; boundary="youtube_boundary"'
+      },
+      payload: [
+        '--youtube_boundary',
+        'Content-Type: application/json; charset=UTF-8',
+        '',
+        JSON.stringify(metadata),
+        '',
+        '--youtube_boundary',
+        'Content-Type: ' + blob.getContentType(),
+        '',
+        blob.getBytes(),
+        '--youtube_boundary--'
+      ].join('\r\n')
+    });
+    
+    const data = JSON.parse(response.getContentText());
+    return data.id;
+  } catch (error) {
+    console.error('Failed to upload video to YouTube:', error);
+    return null;
+  }
+}
+
+/**
+ * Add video to YouTube playlist
+ */
+function addVideoToPlaylist(videoId, playlistId, accessToken) {
+  try {
+    const payload = {
+      snippet: {
+        playlistId: playlistId,
+        resourceId: {
+          kind: 'youtube#video',
+          videoId: videoId
+        }
+      }
+    };
+    
+    UrlFetchApp.fetch('https://www.googleapis.com/youtube/v3/playlistItems?part=snippet', {
+      method: 'POST',
+      headers: {
+        'Authorization': 'Bearer ' + accessToken,
+        'Content-Type': 'application/json'
+      },
+      payload: JSON.stringify(payload)
+    });
+    
+    console.log(`Added video ${videoId} to playlist ${playlistId}`);
+  } catch (error) {
+    console.error(`Failed to add video to playlist:`, error);
+  }
+}
+
+/**
+ * Check if file has already been uploaded to YouTube
+ */
+function isAlreadyUploadedToYoutube(fileId) {
+  try {
+    const file = DriveApp.getFileById(fileId);
+    const properties = file.getProperties();
+    return properties.hasOwnProperty('youtube_uploaded') && properties['youtube_uploaded'] === 'true';
+  } catch (error) {
+    console.error(`Error checking upload status for file ${fileId}:`, error);
+    return false;
+  }
+}
+
+/**
+ * Mark file as uploaded to YouTube
+ */
+function markAsUploadedToYoutube(fileId, videoId) {
+  try {
+    const file = DriveApp.getFileById(fileId);
+    const properties = {
+      'youtube_uploaded': 'true',
+      'youtube_video_id': videoId,
+      'youtube_upload_date': new Date().toISOString()
+    };
+    file.setProperties(properties);
+    console.log(`Marked file ${fileId} as uploaded to YouTube (video ID: ${videoId})`);
+  } catch (error) {
+    console.error(`Error marking file ${fileId} as uploaded:`, error);
+    sendErrorNotification(`Error marking file ${fileId} as uploaded: ${error.toString()}`);
+  }
+}
+
+/**
+ * Generate YouTube video description
+ */
+function generateVideoDescription() {
+  return `Recording from llm-d Community Meeting
+
+This video contains the recording of our community meeting. 
+
+For more information about llm-d, visit: https://github.com/llm-d
+
+Transcript and meeting notes are available on our shared Google Drive.`;
 }
 
 /**
