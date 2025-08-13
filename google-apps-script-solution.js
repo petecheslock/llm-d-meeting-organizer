@@ -2,8 +2,8 @@
  * LLM-D Meeting File Organizer - Google Apps Script Version
  * 
  * This script automatically:
- * 1. Finds files matching "[PUBLIC] llm-d sig-*" pattern
- * 2. Moves them to organized folders in a shared drive
+ * 1. Finds files matching configured meeting patterns (e.g., "[PUBLIC] llm-d sig-*")
+ * 2. Moves them to organized folders in Google Drive
  * 3. Sends Slack notifications via webhooks
  * 4. Runs automatically every 15 minutes
  */
@@ -11,6 +11,11 @@
 // CONFIGURATION is loaded from config.js file
 // This keeps sensitive data (webhooks, folder IDs) out of the main script
 // Note: In Google Apps Script, upload both this file and config.js
+
+/**
+ * @OnlyCurrentDoc
+ * @oauthScopes https://www.googleapis.com/auth/drive
+ */
 
 /**
  * Main function that organizes meeting files
@@ -61,34 +66,6 @@ function organizeMeetingFiles() {
       const targetFolder = getTargetFolder(config);
       
       let filesToNotify = groupFiles;
-      
-      // Upload recording to YouTube BEFORE moving files
-      let youtubeUploadSuccess = true;
-      if (config.uploadToYoutube && hasYouTubeConfig()) {
-        const recordingFiles = groupFiles.filter(file => file.title.includes('Recording'));
-        if (recordingFiles.length > 0) {
-          if (CONFIG.DEBUG_MODE) {
-            console.log(`🐛 DEBUG: Would upload ${recordingFiles.length} recording(s) to YouTube for "${configKey}"`);
-            recordingFiles.forEach(file => {
-              console.log(`🐛 DEBUG: Would upload: ${file.title}`);
-            });
-          } else {
-            try {
-              youtubeUploadSuccess = uploadVideosToYoutube(recordingFiles, config);
-            } catch (error) {
-              console.error(`YouTube upload failed for "${configKey}":`, error);
-              sendErrorNotification(`YouTube upload failed for "${configKey}": ${error.toString()}`);
-              youtubeUploadSuccess = false;
-            }
-          }
-        }
-      }
-      
-      // Only proceed with file movement if YouTube upload succeeded (or wasn't attempted)
-      if (!youtubeUploadSuccess) {
-        console.log(`Skipping file movement for "${configKey}" due to YouTube upload failure`);
-        continue;
-      }
       
       // Move files to the folder (or log in debug mode)
       if (CONFIG.DEBUG_MODE) {
@@ -419,203 +396,9 @@ function sendErrorNotification(errorMessage) {
   }
 }
 
-/**
- * Check if YouTube configuration is available
- */
-function hasYouTubeConfig() {
-  // With YouTube Advanced Service, we just need to check if it's enabled
-  try {
-    // Try to access the YouTube service - will throw if not enabled
-    YouTube.Search.list('id', { maxResults: 1 });
-    return true;
-  } catch (error) {
-    console.error('YouTube Advanced Service not available:', error);
-    return false;
-  }
-}
-
-/**
- * Upload videos to YouTube with duplicate protection
- * @returns {boolean} true if all uploads succeeded, false if any failed
- */
-function uploadVideosToYoutube(recordingFiles, config) {
-  let allUploadsSucceeded = true;
-  
-  for (const fileData of recordingFiles) {
-    try {
-      console.log(`Checking YouTube upload status for: ${fileData.title}`);
-      
-      // Check if already uploaded
-      if (isAlreadyUploadedToYoutube(fileData.id)) {
-        console.log(`Skipping ${fileData.title} - already uploaded to YouTube`);
-        continue;
-      }
-      
-      console.log(`Starting YouTube upload for: ${fileData.title}`);
-      
-      // Get file blob
-      const file = DriveApp.getFileById(fileData.id);
-      const blob = file.getBlob();
-      
-      // Use filename as video title and generate description
-      const videoTitle = fileData.title;
-      const videoDescription = generateVideoDescription();
-      
-      // Upload to YouTube using Advanced Service
-      const videoId = uploadVideoToYoutube(blob, videoTitle, videoDescription);
-      
-      if (videoId) {
-        console.log(`Successfully uploaded to YouTube: ${videoTitle} (ID: ${videoId})`);
-        
-        // Mark as uploaded to prevent duplicates
-        markAsUploadedToYoutube(fileData.id, videoId);
-        
-        // Add to playlist if configured
-        if (config.youtubePlaylistId) {
-          try {
-            addVideoToPlaylist(videoId, config.youtubePlaylistId);
-          } catch (playlistError) {
-            console.error(`Failed to add video to playlist:`, playlistError);
-            sendErrorNotification(`Failed to add video ${videoTitle} to playlist: ${playlistError.toString()}`);
-            // Don't fail the entire upload for playlist errors
-          }
-        }
-      } else {
-        console.error(`Failed to upload ${fileData.title} to YouTube - no video ID returned`);
-        sendErrorNotification(`Failed to upload ${fileData.title} to YouTube - no video ID returned`);
-        allUploadsSucceeded = false;
-      }
-      
-    } catch (error) {
-      console.error(`Failed to upload ${fileData.title} to YouTube:`, error);
-      sendErrorNotification(`Failed to upload ${fileData.title} to YouTube: ${error.toString()}`);
-      allUploadsSucceeded = false;
-    }
-  }
-  
-  return allUploadsSucceeded;
-}
 
 
-/**
- * Upload video to YouTube using Advanced Service
- */
-function uploadVideoToYoutube(blob, title, description) {
-  try {
-    const resource = {
-      snippet: {
-        title: title,
-        description: description,
-        categoryId: '28' // Science & Technology
-      },
-      status: {
-        privacyStatus: 'public'
-      }
-    };
-    
-    const response = YouTube.Videos.insert(resource, 'snippet,status', blob);
-    return response.id;
-  } catch (error) {
-    console.error('Failed to upload video to YouTube:', error);
-    return null;
-  }
-}
 
-/**
- * Add video to YouTube playlist using Advanced Service
- */
-function addVideoToPlaylist(videoId, playlistId) {
-  try {
-    const resource = {
-      snippet: {
-        playlistId: playlistId,
-        resourceId: {
-          kind: 'youtube#video',
-          videoId: videoId
-        }
-      }
-    };
-    
-    YouTube.PlaylistItems.insert(resource, 'snippet');
-    console.log(`Added video ${videoId} to playlist ${playlistId}`);
-  } catch (error) {
-    console.error(`Failed to add video to playlist:`, error);
-  }
-}
-
-/**
- * Check if file has already been uploaded to YouTube
- */
-function isAlreadyUploadedToYoutube(fileId) {
-  try {
-    const file = DriveApp.getFileById(fileId);
-    const properties = file.getProperties();
-    return properties.hasOwnProperty('youtube_uploaded') && properties['youtube_uploaded'] === 'true';
-  } catch (error) {
-    console.error(`Error checking upload status for file ${fileId}:`, error);
-    return false;
-  }
-}
-
-/**
- * Mark file as uploaded to YouTube
- */
-function markAsUploadedToYoutube(fileId, videoId) {
-  try {
-    const file = DriveApp.getFileById(fileId);
-    const properties = {
-      'youtube_uploaded': 'true',
-      'youtube_video_id': videoId,
-      'youtube_upload_date': new Date().toISOString()
-    };
-    file.setProperties(properties);
-    console.log(`Marked file ${fileId} as uploaded to YouTube (video ID: ${videoId})`);
-  } catch (error) {
-    console.error(`Error marking file ${fileId} as uploaded:`, error);
-    sendErrorNotification(`Error marking file ${fileId} as uploaded: ${error.toString()}`);
-  }
-}
-
-/**
- * Test YouTube authorization - run this once to authorize the YouTube service
- * This will prompt for OAuth consent and establish the authorization
- */
-function testYouTubeAuthorization() {
-  try {
-    console.log('Testing YouTube authorization...');
-    
-    // Simple API call to test authorization
-    YouTube.Search.list('id', {
-      q: 'test',
-      maxResults: 1
-    });
-    
-    console.log('✅ YouTube authorization successful!');
-    console.log('YouTube Advanced Service is properly configured and authorized.');
-    
-    return true;
-  } catch (error) {
-    console.error('❌ YouTube authorization failed:', error);
-    console.log('Make sure you have:');
-    console.log('1. Added YouTube Data API service in Apps Script');
-    console.log('2. Completed the OAuth consent flow when prompted');
-    
-    return false;
-  }
-}
-
-/**
- * Generate YouTube video description
- */
-function generateVideoDescription() {
-  return `Recording from llm-d Community Meeting
-
-This video contains the recording of our community meeting. 
-
-For more information about llm-d, visit: https://github.com/llm-d
-
-Transcript and meeting notes are available on our shared Google Drive.`;
-}
 
 /**
  * Setup function - run this once to create the time-based trigger
@@ -681,3 +464,4 @@ function listTriggers() {
     }
   });
 }
+

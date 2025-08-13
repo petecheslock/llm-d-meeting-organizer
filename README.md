@@ -1,4 +1,4 @@
-# LLM-D Meeting Mover
+# LLM-D Meeting File Organizer
 
 **Google Apps Script** solution that automatically organizes Google Meet recordings and sends Slack notifications.
 
@@ -6,13 +6,11 @@
 
 - Automatically detects files with configured meeting patterns (e.g., `[PUBLIC] llm-d sig-*`)
 - Only processes complete pairs: both "Notes by Gemini" and "Recording" files must be present
-- **YouTube uploads** - automatically upload recordings to YouTube with playlist organization (optional)
 - Moves files to exact target folders you specify in Google Drive
 - Sends Slack notifications to corresponding channels via webhooks
-- **Duplicate protection** - prevents re-uploading already processed videos
 - **Error notifications** - sends alerts to your private channel for any issues
 - Runs every 15 minutes automatically
-- **Debug mode** - test safely without moving files or uploading videos
+- **Debug mode** - test safely without moving files
 
 ## Quick Start
 
@@ -31,18 +29,15 @@ The application:
 1. Searches for files matching configured meeting patterns (e.g., `[PUBLIC] llm-d sig-*`, `[PUBLIC] llm-d Community Meeting`)
 2. Groups files by meeting configuration
 3. Only processes complete pairs where both "Notes by Gemini" and "Recording" files are present
-4. **Uploads recordings to YouTube** (if configured) with automatic playlist organization
-5. Moves all matching files to the exact target folder specified in configuration
-6. Posts notification to the corresponding Slack channel via webhook
-7. **Tracks uploaded videos** to prevent duplicates and handle failures gracefully
-8. Supports debug mode for safe testing without file movement or uploads
+4. Moves all matching files to the exact target folder specified in configuration
+5. Posts notification to the corresponding Slack channel via webhook
+6. Supports debug mode for safe testing without file movement
 
 ## Prerequisites
 
 - Google Workspace account
 - Slack workspace with webhook permissions
 - Shared Google Drive folder for organizing files
-- **YouTube channel** (optional, for automatic video uploads)
 
 ## Files in This Repository
 
@@ -58,4 +53,3 @@ The application:
 The script only requires:
 - **Google Drive**: Read/write access to organize files
 - **Slack**: Webhook URLs for notifications
-- **YouTube Data API**: Advanced Service access for video uploads (optional)

@@ -54,13 +54,10 @@ const CONFIG = {
     '[PUBLIC] llm-d Community Meeting': {
       targetFolderId: 'YOUR_TARGET_FOLDER_ID',
       slackWebhook: 'YOUR_SLACK_WEBHOOK_URL',
-      slackChannel: '#community',
-      youtubeChannelId: 'YOUR_YOUTUBE_CHANNEL_ID',
-      youtubePlaylistId: 'YOUR_YOUTUBE_PLAYLIST_ID',
-      uploadToYoutube: true
+      slackChannel: '#community'
     }
     // Add more meeting configurations as needed
-    // Format: 'meeting prefix': { targetFolderId, slackWebhook, slackChannel, youtubeChannelId?, youtubePlaylistId?, uploadToYoutube? }
+    // Format: 'meeting prefix': { targetFolderId, slackWebhook, slackChannel }
   },
   
   // Default webhook for error notifications and debug testing
