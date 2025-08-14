@@ -1,4 +1,4 @@
-# LLM-D Meeting Management Suite
+# llm-d-meeting-organizer
 
 Google Apps Script solutions for meeting management, including file organization and calendar-based notifications.
 
