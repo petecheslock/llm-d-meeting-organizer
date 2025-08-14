@@ -13,6 +13,11 @@ const CONFIG = {
   // Get this from the URL: https://drive.google.com/drive/folders/YOUR_SOURCE_FOLDER_ID_HERE
   SOURCE_FOLDER_ID: 'YOUR_SOURCE_FOLDER_ID_HERE',
   
+  // Calendar ID for the shared calendar to monitor for upcoming meetings (calendar notifier only)
+  // Get this from Google Calendar settings -> Calendar settings -> Calendar ID
+  // For public calendars, it's usually the email address format
+  CALENDAR_ID: 'YOUR_CALENDAR_ID_HERE@group.calendar.google.com',
+  
   // Meeting prefix to exact target folder mapping
   // Each entry maps a meeting prefix to the exact Google Drive folder ID where files should be moved
   MEETING_CONFIGS: {
@@ -61,5 +66,6 @@ const CONFIG = {
   },
   
   // Default webhook for error notifications and debug testing
+  // This is used for both file organizer and calendar notifier errors
   DEFAULT_WEBHOOK: 'YOUR_DEFAULT_WEBHOOK_URL'
 };
