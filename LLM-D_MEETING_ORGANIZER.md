@@ -59,7 +59,7 @@ community: https://hooks.slack.com/services/T123/B456/abc123
 2. Click "New Project"
 3. Name it: "LLM-D Meeting File Organizer"
 4. Delete the default `myFunction()` code
-5. Copy and paste the entire contents of `google-apps-script-solution.js`
+5. Copy and paste the entire contents of `llm-d-meeting-organizer.js`
 
 ### Step 4: Configure the Script
 
