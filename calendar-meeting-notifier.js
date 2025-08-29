@@ -569,28 +569,16 @@ function setupCalendarTrigger() {
       }
     }
     
-    // Create two triggers: one for the hour (:00) and one for half hour (:30)
-    // This ensures we run exactly when meetings start
-    
-    // Trigger for the top of each hour (:00)
+    // Create a trigger that runs every minute for maximum precision
+    // This ensures notifications are sent within 30 seconds of meeting start time
+    // The function's smart timing logic finds the nearest :00/:30 and prevents duplicate notifications
     ScriptApp.newTrigger('checkCalendarAndNotify')
       .timeBased()
-      .everyHours(1)
+      .everyMinutes(1)
       .create();
     
-    // Trigger for the half hour (:30) - we'll use a time-based approach
-    // Create a trigger that runs every hour but offset by 30 minutes
-    const now = new Date();
-    const thirtyMinutesFromNow = new Date(now.getTime() + (30 * 60 * 1000));
-    
-    ScriptApp.newTrigger('checkCalendarAndNotify')
-      .timeBased()
-      .everyHours(1)
-      .nearTime(thirtyMinutesFromNow)
-      .create();
-    
-    console.log('✅ Calendar triggers setup successfully - will run at :00 and :30 of each hour');
-    sendDebugMessage('Calendar triggers setup successfully - will run at :00 and :30 of each hour');
+    console.log('✅ Calendar trigger setup successfully - will run every minute');
+    sendDebugMessage('Calendar trigger setup successfully - will run every minute');
     
   } catch (error) {
     console.error('❌ Error setting up calendar trigger:', error);

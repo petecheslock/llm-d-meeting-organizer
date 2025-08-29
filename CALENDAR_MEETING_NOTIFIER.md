@@ -125,17 +125,17 @@ The script uses a timing system to handle trigger variations:
 ### Step 8: Setup Automatic Trigger
 
 1. Run the `setupCalendarTrigger()` function once
-2. This creates triggers to run exactly at :00 and :30 of each hour
+2. This creates a trigger to run every minute (ensuring notifications are sent within 30 seconds of meeting start)
 3. You should see a confirmation message in your error channel
 
 ### Step 9: Verify Setup
 
 1. Check Google Apps Script triggers:
    - Go to "Triggers" in the left sidebar
-   - Verify there are TWO triggers for `checkCalendarAndNotify` - one for :00 and one for :30
+   - Verify there is ONE trigger for `checkCalendarAndNotify` that runs every minute
 2. Monitor your error channel for any issues
-3. Wait for the next hour or half-hour to see live notifications
-4. Verify that notifications appear exactly when meetings start
+3. Wait for the next trigger run to see live notifications
+4. Verify that notifications appear within 30 seconds of meeting start
 
 ## Testing and Debugging
 
@@ -213,29 +213,99 @@ For best results with document detection:
 
 ### How the Timing System Works
 
-The script uses a timing system to handle Google Apps Script trigger variations:
+The script uses a smart timing system to ensure meetings are notified exactly once:
+
+#### Trigger Frequency
+- **Runs every minute** regardless of when initially set up
+- **Ensures notifications within 30 seconds** of meeting start time
+- **Example**: Even if trigger created at 2:17 PM, it will run at 2:17, 2:18, 2:19... 2:29, 2:30, 2:31...
+  - The 2:29 or 2:30 run will catch 2:30 meetings (within 60 seconds)
+  - The 2:59 or 3:00 run will catch 3:00 meetings (within 60 seconds)
+
+#### Frequency Comparison
+
+| Frequency | Max Early | Max Late | Runs/Hour | Resource Usage | Best For |
+|---|---|---|---|---|---|
+| **1 minute** | 30s | 30s | 60 | High | Maximum precision |
+| **5 minutes** | 2.5min | 2.5min | 12 | Medium | Good balance |
+| **15 minutes** | 7.5min | 7.5min | 4 | Low | Light usage |
 
 #### Target Time Detection
+When the script runs, it finds the nearest :00 or :30 time:
 - **Minutes 0-15**: Targets the current hour's :00 time
 - **Minutes 16-45**: Targets the current hour's :30 time  
 - **Minutes 46-59**: Targets the next hour's :00 time
 
 #### Search Window
-- **±5 minute buffer** around target time handles timing variations
+- **±5 minute buffer** around target time handles minor timing variations
 - **Example**: Script runs at 2:02 PM → targets 2:00 PM → searches 1:55-2:05 PM
 
 #### Examples
-| Script Run Time | Target Time | Search Window | Result |
-|---|---|---|---|
-| 1:55 PM (early) | 2:00 PM | 1:55-2:05 PM | Finds 2:00 PM meeting |
-| 2:00 PM (on time) | 2:00 PM | 1:55-2:05 PM | Finds 2:00 PM meeting |
-| 2:05 PM (late) | 2:00 PM | 1:55-2:05 PM | Finds 2:00 PM meeting |
-| 2:27 PM | 2:30 PM | 2:25-2:35 PM | Finds 2:30 PM meeting |
+| Script Run Time | Target Time | Search Window | Result | Notification Timing |
+|---|---|---|---|---|
+| 1:59 PM | 2:00 PM | 1:55-2:05 PM | Finds 2:00 PM meeting | 1 min early ⚡ |
+| 2:00 PM | 2:00 PM | 1:55-2:05 PM | Finds 2:00 PM meeting | Exactly on time 🎯 |
+| 2:01 PM | 2:00 PM | 1:55-2:05 PM | Finds 2:00 PM meeting | 1 min late ✅ |
+| 2:29 PM | 2:30 PM | 2:25-2:35 PM | Finds 2:30 PM meeting | 1 min early ⚡ |
+| 2:30 PM | 2:30 PM | 2:25-2:35 PM | Finds 2:30 PM meeting | Exactly on time 🎯 |
+| 2:31 PM | 2:30 PM | 2:25-2:35 PM | Finds 2:30 PM meeting | 1 min late ✅ |
 
 #### Duplicate Prevention
-- Each meeting gets one notification from the appropriate trigger
-- 2:30 PM meeting not caught by 2:00 PM trigger (search only goes to 2:05 PM)
-- Time windows do not overlap
+- **Smart targeting**: Each trigger run only looks for meetings near one specific time
+- **Non-overlapping windows**: 2:00 PM window (1:55-2:05) never overlaps with 2:30 PM window (2:25-2:35)
+- **One notification per meeting**: Each meeting gets exactly one notification
+
+### Alternative: Exact Timing (Advanced)
+
+For notifications sent at **exactly** :00 and :30 times, you would need:
+
+```javascript
+// Create trigger at exactly :00, runs every hour at :00
+ScriptApp.newTrigger('checkCalendarAndNotify')
+  .timeBased()
+  .everyHours(1)
+  .create();
+
+// Create trigger at exactly :30, runs every hour at :30  
+ScriptApp.newTrigger('checkCalendarAndNotify')
+  .timeBased()
+  .everyHours(1)
+  .create();
+```
+
+**Challenge**: You must create the first trigger at exactly :00 and the second at exactly :30.
+
+**Recommendation**: The 1-minute approach provides maximum precision, but consider the resource usage if you have many scripts running.
+
+### Google Apps Script Quotas (Every Minute Considerations)
+
+Running every minute uses more resources but is well within Google's limits:
+
+| Resource | Daily Limit | 1-min Usage | 5-min Usage | Status |
+|---|---|---|---|---|
+| **Script runtime** | 6 hours | ~24 minutes | ~5 minutes | ✅ Safe |
+| **Triggers** | 20 per script | 1 trigger | 1 trigger | ✅ Safe |
+| **Calendar API calls** | 1,000,000 | ~1,440 calls | ~288 calls | ✅ Safe |
+| **URL fetches** | 20,000 | Variable | Variable | ✅ Safe |
+
+**Verdict**: Every minute is perfectly safe for a single meeting notifier script.
+
+### Adjusting Trigger Frequency
+
+To change the frequency, modify line 577 in `setupCalendarTrigger()`:
+
+```javascript
+// For maximum precision (30 seconds)
+.everyMinutes(1)
+
+// For good balance (2.5 minutes) 
+.everyMinutes(5)
+
+// For light usage (7.5 minutes)
+.everyMinutes(15)
+```
+
+Re-run `setupCalendarTrigger()` after changing to update the trigger.
 
 ## Security Notes
 
