@@ -14,13 +14,14 @@ Google Apps Script solutions for meeting management, including file organization
 - Debug mode available for testing without moving files
 
 ### Calendar Meeting Notifier (`calendar-meeting-notifier.js`)
-- Monitors shared Google Calendar and sends Slack notifications for meetings
-- Uses ±5 minute buffer around target times to handle trigger timing variations
-- Extracts Google Meet links and meeting documents from calendar events
+- Monitors shared Google Calendar and sends Slack notifications when meetings start
+- Notifies at meeting start time (±90 seconds) with precise timing
+- Prevents duplicate notifications with intelligent tracking system
+- Extracts Google Meet links and meeting documents from calendar events  
 - Sends different messages to SIG channels vs community channel
-- Prevents duplicate notifications by using precise time windows
+- Smart storage management prevents PropertiesService overflow
 - Uses Calendar API and Drive API for meeting data
-- Includes multiple debug functions for testing
+- Comprehensive testing and monitoring functions
 
 ## Quick Start
 
@@ -37,11 +38,12 @@ Google Apps Script solutions for meeting management, including file organization
 1. **Create new script**: Create a Google Apps Script project and paste `calendar-meeting-notifier.js`
 2. **Enable APIs**: Add Google Calendar API and Google Drive API in project services
 3. **Create config**: Copy `config.example.js` to create `config.js` with your calendar ID and webhooks
-4. **Test timing logic**: Run `testTimingWindow()` to see how the timing system works
+4. **Test timing logic**: Run `testTimingWindow()` to see how meetings are detected at start time
 5. **Test configuration**: Run `testConfig()` to verify all settings are correct
 6. **Test with real data**: Run `testNextMeetingNotification()` to test with your actual next meeting
-7. **Setup triggers**: Execute `setupCalendarTrigger()` to create :00 and :30 triggers
-8. **Verify operation**: Check that triggers are created and monitor for live notifications
+7. **Setup triggers**: Execute `setupCalendarTrigger()` for main notifications + `setupCleanupTriggers()` for storage management
+8. **Monitor storage**: Use `monitorStorageHealth()` to check PropertiesService usage
+9. **Verify operation**: Check that triggers are created and monitor for live notifications
 
 **Full setup instructions**: See [CALENDAR_MEETING_NOTIFIER.md](./CALENDAR_MEETING_NOTIFIER.md)
 
@@ -81,26 +83,17 @@ The application:
 
 ### Calendar Timing System
 
-The Calendar Notifier uses a timing system to handle Google Apps Script trigger variations:
+The Calendar Notifier sends notifications exactly when meetings start:
 
-1. **Target Detection**: Finds nearest :00 or :30 time when script runs
-2. **±5 Minute Buffer**: Searches around target time to handle timing variations  
-3. **Duplicate Prevention**: Each meeting gets one notification from appropriate trigger
+1. **Precise Timing**: Runs every minute and notifies when meetings are starting (±90 seconds)
+2. **Smart Detection**: Finds meetings starting within current timeframe, accounting for trigger variations
+3. **Duplicate Prevention**: Intelligent tracking prevents multiple notifications for the same meeting
+4. **Storage Management**: Multi-layered cleanup system prevents PropertiesService overflow
 
 **Examples:**
-- Script at 2:02 PM → targets 2:00 PM → searches 1:55-2:05 PM
-- Script at 2:27 PM → targets 2:30 PM → searches 2:25-2:35 PM
-
-### Two Independent Scripts
-
-1. **File Organizer**: Post-meeting file organization with folder monitoring
-2. **Calendar Notifier**: Pre-meeting notifications with timing tolerance
-
-**Benefits:**
-- Each script only requests needed APIs
-- Can be updated and deployed separately
-- Issues in one script don't affect the other
-- Clear separation: File organization vs meeting notifications
+- Meeting at 2:00:00 PM gets notified between 1:58:30-2:01:30 PM (when trigger first runs in that window)
+- Each meeting gets exactly one notification when it starts
+- Old tracking records automatically cleaned up
 
 ## Security & Permissions
 

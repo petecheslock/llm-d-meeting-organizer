@@ -1,43 +1,48 @@
 # Calendar Meeting Notifier Setup Guide
 
-Google Apps Script that monitors a shared Google Calendar and sends Slack notifications for LLM-D meetings. Includes timing tolerance and content extraction.
+Google Apps Script that monitors a shared Google Calendar and sends Slack notifications exactly when LLM-D meetings start. Includes intelligent storage management and comprehensive testing functions.
 
 ## How It Works
 
 ### Timing System
-The script uses a timing system to handle trigger variations:
+The script sends notifications when meetings are actually starting:
 
-1. **Target Time Detection**: When script runs, it determines the closest :00 or :30 time
-   - Minutes 0-15 → targets the :00 time  
-   - Minutes 16-45 → targets the :30 time
-   - Minutes 46-59 → targets next hour's :00 time
+1. **Precise Detection**: Runs every minute and looks for meetings starting within ±90 seconds
+   - Meeting at 2:00:00 PM gets notified between 1:58:30-2:01:30 PM
+   - Accounts for Google Apps Script trigger timing variations
+   - No more early notifications - alerts sent when meetings begin
 
-2. **±5 Minute Buffer**: Searches 5 minutes before and after the target time
-   - Meeting at 2:00 PM found whether script runs at 1:55 PM or 2:05 PM
-   - Each meeting notified exactly once
+2. **Smart Tracking**: Prevents duplicate notifications with intelligent record-keeping
+   - Each meeting gets exactly one notification using unique identifiers
+   - PropertiesService stores which meetings have been notified
+   - Automatic cleanup prevents storage overflow
 
 3. **Examples**:
-   - Script at 2:02 PM → Target 2:00 PM → Search 1:55-2:05 PM
-   - Script at 2:27 PM → Target 2:30 PM → Search 2:25-2:35 PM
+   - Script at 1:59:30 PM → Finds 2:00:00 PM meeting → ✅ NOTIFY (30s early)
+   - Script at 2:00:15 PM → Finds 2:00:00 PM meeting → ✅ NOTIFY (15s late) 
+   - Script at 2:01:35 PM → Meeting already notified → ⏭️ Skip
 
 ## Features
 
-- ±5 minute tolerance around target times to handle trigger variations
-- Finds nearest :00 or :30 time automatically
-- Uses Calendar API for meeting data extraction
-- Extracts Google Meet links from conference data
-- Finds and displays meeting documents with actual file names
-- Different message content for SIG vs community channels
-- Multiple debug functions for testing
-- Prevents duplicate notifications
+- **Precise timing**: Notifications sent at meeting start time (±90 seconds)
+- **Duplicate prevention**: Intelligent tracking ensures one notification per meeting
+- **Storage management**: Multi-layered cleanup prevents PropertiesService overflow
+- **Smart cleanup**: Adapts cleanup frequency based on storage usage (4h/8h/24h)
+- **Daily maintenance**: End-of-day cleanup at 11:30 PM removes old records
+- **Storage monitoring**: Health alerts when storage reaches 80% capacity
+- **Uses Calendar API**: Advanced meeting data extraction with conference info
+- **Document detection**: Finds and displays meeting documents with actual file names
+- **Channel-specific messaging**: Different content for SIG vs community channels
+- **Comprehensive testing**: Multiple debug functions for setup and monitoring
 
 ## Meeting Notification Rules
 
 - **SIG Meetings**: 
-  - Posted to the specific SIG channel: "The weekly public llm-d sig-name meeting is starting NOW. Join us!"
-  - Posted to #community channel: "Join the #sig-channel for detailed discussion."
-- **Community Meeting**: Posted only to #community channel: "Join us!"
+  - Posted to the specific SIG channel: "The weekly public llm-d sig-name meeting is starting NOW! Join us!"
+  - Posted to #community channel: "The weekly public llm-d sig-name meeting is starting NOW! Join the #sig-channel channel for detailed discussion."
+- **Community Meeting**: Posted only to #community channel: "The weekly public llm-d Community Meeting is starting NOW! Join us!"
 - **Content**: Notifications include Google Meet links and attached documents when available
+- **Timing**: All notifications sent exactly when meetings begin, not in advance
 
 ## Prerequisites
 
@@ -122,31 +127,61 @@ The script uses a timing system to handle trigger variations:
 4. Verify the message formatting looks good for both SIG and community channels
 5. Check that Google Meet links and document attachments are properly formatted
 
-### Step 8: Setup Automatic Trigger
+### Step 8: Setup Automatic Triggers
 
-1. Run the `setupCalendarTrigger()` function once
-2. This creates a trigger to run every minute (ensuring notifications are sent within 30 seconds of meeting start)
-3. You should see a confirmation message in your error channel
+1. **Main notification trigger**: Run the `setupCalendarTrigger()` function once
+   - Creates a trigger to run every minute (ensuring notifications within 90 seconds of meeting start)
+   - Replaces any existing triggers for the same function
+
+2. **Storage management trigger**: Run the `setupCleanupTriggers()` function once  
+   - Creates daily cleanup trigger (runs at 11:30 PM)
+   - Prevents PropertiesService storage overflow
+   - Only sends alerts on failures, not successes
+
+3. Both setup functions log confirmation messages
 
 ### Step 9: Verify Setup
 
 1. Check Google Apps Script triggers:
-   - Go to "Triggers" in the left sidebar
+   - Go to "Triggers" in the left sidebar  
    - Verify there is ONE trigger for `checkCalendarAndNotify` that runs every minute
-2. Monitor your error channel for any issues
-3. Wait for the next trigger run to see live notifications
-4. Verify that notifications appear within 30 seconds of meeting start
+   - Verify there is ONE trigger for `dailyCleanupNotificationRecords` that runs daily at 11:30 PM
+
+2. **Monitor storage health**: Run `monitorStorageHealth()` to check current usage
+   - Should show 0/50 properties initially (healthy storage)
+   - Will show utilization percentage as meetings get tracked
+
+3. **Test live notifications**: Wait for meetings to start and verify:
+   - Notifications appear within 90 seconds of meeting start time
+   - No duplicate notifications for the same meeting
+   - Only one notification per meeting across multiple trigger runs
+
+4. Monitor your error channel for:
+   - Storage warnings (only if issues occur)
+   - Any processing errors
+   - Setup confirmations
 
 ## Testing and Debugging
 
 ### Debug Functions
 
+**Configuration & Setup:**
 - `testConfig()` - Verify configuration is loaded and all required fields are present
-- `testTimingWindow()` - Shows how timing logic works with examples
+- `setupCalendarTrigger()` - Create the every-minute trigger (run once)
+- `setupCleanupTriggers()` - Create the daily cleanup trigger (run once)
+
+**Meeting Detection & Testing:**  
+- `testTimingWindow()` - Shows how ±90 second timing logic works with examples
 - `testCalendarNotifier()` - End-to-end test in debug mode (sends to error channel)
-- `debugListUpcomingEvents()` - List all events found in current ±5 minute window  
+- `debugListUpcomingEvents()` - List all events found in current search window
 - `testNextMeetingNotification()` - Find and test your next real meeting (searches 7 days ahead)
-- `setupCalendarTrigger()` - Create the :00 and :30 triggers (run once)
+
+**Storage Management & Monitoring:**
+- `monitorStorageHealth()` - Complete storage utilization report with health status
+- `listNotificationRecords()` - Show all current notification tracking records  
+- `clearAllNotificationRecords()` - Clear all tracking records (for testing)
+- `dailyCleanupNotificationRecords()` - Manual daily cleanup (6-hour cutoff)
+- `cleanupOldNotificationRecords()` - Manual smart cleanup (adaptive timing)
 
 ### Debug Mode
 
@@ -167,10 +202,11 @@ Set `DEBUG_MODE: true` in your config to:
    - Ensure the calendar is shared with your Google account
    - Check that the calendar ID includes the full domain (e.g., `@group.calendar.google.com`)
 
-3. **"No events found"**
+3. **"No meetings starting now"**
    - Run `debugListUpcomingEvents()` to see what events exist
    - Verify events have titles that match your configured prefixes
-   - Check that events are within the next 30 minutes
+   - Check that events are starting within ±90 seconds of current time
+   - Use `testTimingWindow()` to understand the detection window
 
 4. **"Slack notifications not sent"**
    - Verify webhook URLs are correct in your config.js
@@ -182,11 +218,19 @@ Set `DEBUG_MODE: true` in your config to:
    - Ensure your Google account has access to the calendar
    - Check Google Apps Script execution permissions
 
+6. **Storage/duplicate notification issues**
+   - Run `monitorStorageHealth()` to check PropertiesService usage
+   - If storage is full (near 50/50 properties), run `cleanupOldNotificationRecords()`
+   - Use `listNotificationRecords()` to see what's being tracked
+   - For testing, use `clearAllNotificationRecords()` to reset tracking
+
 ### Monitoring
 
-- All errors are automatically sent to your error webhook channel
-- Use the execution transcript in Google Apps Script for detailed logs
-- Monitor your error channel for any automated notifications
+- **Error notifications**: Automatically sent to your error webhook channel
+- **Storage health**: Monitor with `monitorStorageHealth()` function  
+- **Execution logs**: Use the execution transcript in Google Apps Script for detailed logs
+- **Quiet operation**: System runs silently unless there are issues
+- **Storage alerts**: Only sent when storage reaches 80% or cleanup issues occur
 
 ## Calendar Integration Tips
 
@@ -213,99 +257,112 @@ For best results with document detection:
 
 ### How the Timing System Works
 
-The script uses a smart timing system to ensure meetings are notified exactly once:
+The script sends notifications exactly when meetings start using precise detection and smart tracking:
 
-#### Trigger Frequency
-- **Runs every minute** regardless of when initially set up
-- **Ensures notifications within 30 seconds** of meeting start time
-- **Example**: Even if trigger created at 2:17 PM, it will run at 2:17, 2:18, 2:19... 2:29, 2:30, 2:31...
-  - The 2:29 or 2:30 run will catch 2:30 meetings (within 60 seconds)
-  - The 2:59 or 3:00 run will catch 3:00 meetings (within 60 seconds)
+#### Meeting Start Detection
+- **Runs every minute** for maximum precision
+- **±90 second window**: Finds meetings starting within 90 seconds of current time  
+- **No advance notifications**: Alerts sent when meetings actually begin, not beforehand
+- **Accounts for trigger variations**: Google Apps Script triggers may run a few seconds early/late
 
-#### Frequency Comparison
+#### Timing Examples
 
-| Frequency | Max Early | Max Late | Runs/Hour | Resource Usage | Best For |
-|---|---|---|---|---|---|
-| **1 minute** | 30s | 30s | 60 | High | Maximum precision |
-| **5 minutes** | 2.5min | 2.5min | 12 | Medium | Good balance |
-| **15 minutes** | 7.5min | 7.5min | 4 | Low | Light usage |
-
-#### Target Time Detection
-When the script runs, it finds the nearest :00 or :30 time:
-- **Minutes 0-15**: Targets the current hour's :00 time
-- **Minutes 16-45**: Targets the current hour's :30 time  
-- **Minutes 46-59**: Targets the next hour's :00 time
-
-#### Search Window
-- **±5 minute buffer** around target time handles minor timing variations
-- **Example**: Script runs at 2:02 PM → targets 2:00 PM → searches 1:55-2:05 PM
-
-#### Examples
-| Script Run Time | Target Time | Search Window | Result | Notification Timing |
+| Current Time | Meeting Start | Seconds Difference | Action | Result |
 |---|---|---|---|---|
-| 1:59 PM | 2:00 PM | 1:55-2:05 PM | Finds 2:00 PM meeting | 1 min early ⚡ |
-| 2:00 PM | 2:00 PM | 1:55-2:05 PM | Finds 2:00 PM meeting | Exactly on time 🎯 |
-| 2:01 PM | 2:00 PM | 1:55-2:05 PM | Finds 2:00 PM meeting | 1 min late ✅ |
-| 2:29 PM | 2:30 PM | 2:25-2:35 PM | Finds 2:30 PM meeting | 1 min early ⚡ |
-| 2:30 PM | 2:30 PM | 2:25-2:35 PM | Finds 2:30 PM meeting | Exactly on time 🎯 |
-| 2:31 PM | 2:30 PM | 2:25-2:35 PM | Finds 2:30 PM meeting | 1 min late ✅ |
+| 1:58:45 PM | 2:00:00 PM | +75s | ✅ NOTIFY | 1m 15s early |
+| 1:59:30 PM | 2:00:00 PM | +30s | ✅ NOTIFY | 30s early |
+| 2:00:00 PM | 2:00:00 PM | 0s | ✅ NOTIFY | Exactly on time 🎯 |
+| 2:00:45 PM | 2:00:00 PM | -45s | ✅ NOTIFY | 45s late |
+| 2:01:30 PM | 2:00:00 PM | -90s | ✅ NOTIFY | 1m 30s late |
+| 2:02:00 PM | 2:00:00 PM | -120s | ❌ Skip | Too late (already notified) |
 
-#### Duplicate Prevention
-- **Smart targeting**: Each trigger run only looks for meetings near one specific time
-- **Non-overlapping windows**: 2:00 PM window (1:55-2:05) never overlaps with 2:30 PM window (2:25-2:35)
-- **One notification per meeting**: Each meeting gets exactly one notification
+#### Intelligent Duplicate Prevention
 
-### Alternative: Exact Timing (Advanced)
+The system prevents duplicate notifications using PropertiesService tracking:
 
-For notifications sent at **exactly** :00 and :30 times, you would need:
+1. **Unique Identification**: Each meeting gets a unique key based on:
+   - Calendar event ID  
+   - Meeting start time
+   - Creates key like: `notified_eventid123_2024-01-15T14:00:00.000Z`
+
+2. **Smart Tracking**: Before sending notifications:
+   - Check if key exists in PropertiesService
+   - If exists → Skip (already notified)
+   - If not → Send notifications and record key
+
+3. **Example Flow**:
+   ```
+   1:59:30 PM → Meeting found → No record → ✅ Send notifications → Record key
+   2:00:15 PM → Same meeting found → Record exists → ⏭️ Skip notifications  
+   2:00:45 PM → Same meeting found → Record exists → ⏭️ Skip notifications
+   ```
+
+#### Storage Management
+
+The system automatically manages tracking records to prevent storage overflow:
+
+**Smart Cleanup Frequency:**
+- **< 30 records**: 24-hour cleanup (normal load)
+- **30-45 records**: 8-hour cleanup (moderate load) 
+- **45+ records**: 4-hour cleanup (high load)
+- **48+ records**: Emergency cleanup (remove oldest immediately)
+
+**Daily Maintenance:**  
+- **11:30 PM cleanup**: Removes records older than 6 hours
+- **Health monitoring**: Alerts when storage reaches 80% capacity (40/50 properties)
+- **Automatic alerts**: Only sends notifications when there are issues
+
+#### Resource Usage
+
+Running every minute is well within Google Apps Script limits:
+
+| Resource | Daily Limit | Usage (1-min) | Status |
+|---|---|---|---|
+| **Script runtime** | 6 hours | ~24 minutes | ✅ 0.7% of limit |
+| **Triggers** | 20 per script | 2 triggers | ✅ 10% of limit |
+| **Calendar API** | 1,000,000 calls | ~1,440 calls | ✅ 0.1% of limit |  
+| **URL fetches** | 20,000 calls | Variable | ✅ Safe |
+| **PropertiesService** | 50 properties | Auto-managed | ✅ Monitored |
+
+**Verdict**: Every minute frequency is perfectly safe and provides optimal precision.
+
+### Storage Health Monitoring
+
+Use these commands to monitor and maintain your system:
 
 ```javascript
-// Create trigger at exactly :00, runs every hour at :00
-ScriptApp.newTrigger('checkCalendarAndNotify')
-  .timeBased()
-  .everyHours(1)
-  .create();
+// Check current storage usage and health
+monitorStorageHealth()
 
-// Create trigger at exactly :30, runs every hour at :30  
-ScriptApp.newTrigger('checkCalendarAndNotify')
-  .timeBased()
-  .everyHours(1)
-  .create();
+// View all notification tracking records  
+listNotificationRecords()
+
+// Manual cleanup if needed (emergency use)
+cleanupOldNotificationRecords()
+
+// Clear all records (testing only)
+clearAllNotificationRecords()
 ```
 
-**Challenge**: You must create the first trigger at exactly :00 and the second at exactly :30.
+**Normal Operation**: System runs silently with automatic maintenance. You'll only get alerts if there are issues.
 
-**Recommendation**: The 1-minute approach provides maximum precision, but consider the resource usage if you have many scripts running.
+### Customizing Cleanup Frequency
 
-### Google Apps Script Quotas (Every Minute Considerations)
-
-Running every minute uses more resources but is well within Google's limits:
-
-| Resource | Daily Limit | 1-min Usage | 5-min Usage | Status |
-|---|---|---|---|---|
-| **Script runtime** | 6 hours | ~24 minutes | ~5 minutes | ✅ Safe |
-| **Triggers** | 20 per script | 1 trigger | 1 trigger | ✅ Safe |
-| **Calendar API calls** | 1,000,000 | ~1,440 calls | ~288 calls | ✅ Safe |
-| **URL fetches** | 20,000 | Variable | Variable | ✅ Safe |
-
-**Verdict**: Every minute is perfectly safe for a single meeting notifier script.
-
-### Adjusting Trigger Frequency
-
-To change the frequency, modify line 577 in `setupCalendarTrigger()`:
+The system automatically adapts, but you can adjust timing in the code:
 
 ```javascript
-// For maximum precision (30 seconds)
-.everyMinutes(1)
-
-// For good balance (2.5 minutes) 
-.everyMinutes(5)
-
-// For light usage (7.5 minutes)
-.everyMinutes(15)
+// In cleanupOldNotificationRecords() - line ~460
+// Current: 4h/8h/24h adaptive cleanup
+if (notificationRecords.length >= 45) {
+  cutoffHours = 4;  // Very aggressive - change to 6 for less aggressive
+} else if (notificationRecords.length >= 30) {  
+  cutoffHours = 8;  // Moderate - change to 12 for less aggressive  
+} else {
+  cutoffHours = 24; // Normal - change to 48 for longer retention
+}
 ```
 
-Re-run `setupCalendarTrigger()` after changing to update the trigger.
+**Recommendation**: The default adaptive system works well for most use cases.
 
 ## Security Notes
 
@@ -316,12 +373,30 @@ Re-run `setupCalendarTrigger()` after changing to update the trigger.
 
 ## Troubleshooting
 
+### Quick Diagnosis
+
 If notifications aren't working:
 
-1. Check the Google Apps Script execution log
-2. Verify calendar permissions
-3. Test with debug functions
-4. Monitor the error channel for automated alerts
-5. Ensure webhook URLs are active and correct
+1. **Check timing**: Run `testTimingWindow()` to understand detection window
+2. **Check configuration**: Run `testConfig()` to verify all settings  
+3. **Check meetings**: Run `debugListUpcomingEvents()` to see what events exist
+4. **Check storage**: Run `monitorStorageHealth()` to verify tracking system
+5. **Test end-to-end**: Run `testNextMeetingNotification()` with real meeting
 
-For additional help, check the execution transcript in Google Apps Script for detailed error messages.
+### Storage Issues
+
+If getting duplicate notifications or storage errors:
+
+1. **Check usage**: `monitorStorageHealth()` shows current utilization
+2. **Manual cleanup**: `cleanupOldNotificationRecords()` for immediate cleanup
+3. **View records**: `listNotificationRecords()` shows what's tracked
+4. **Reset for testing**: `clearAllNotificationRecords()` clears all tracking
+
+### System Health
+
+- **Execution logs**: Google Apps Script → Executions tab for detailed error messages
+- **Error channel**: Monitor your DEFAULT_WEBHOOK channel for automated alerts
+- **Calendar permissions**: Ensure your account can read the shared calendar  
+- **Webhook testing**: Verify URLs work in debug mode before live deployment
+
+**The system is designed to run quietly** - you should only get notifications when there are actual issues to address.
