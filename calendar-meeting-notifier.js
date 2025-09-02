@@ -1,15 +1,30 @@
 /**
  * LLM-D Calendar Meeting Notifier
  * 
- * Automatically checks a shared Google Calendar every 30 minutes (on the hour and half hour)
- * and posts Slack notifications for upcoming meetings based on configured prefixes.
+ * Automatically checks a shared Google Calendar every minute and posts Slack notifications 
+ * for meetings that are starting RIGHT NOW.
  * 
  * Features:
- * - Runs every 30 minutes exactly (on :00 and :30)
- * - Queries public shared calendar for upcoming meetings
+ * - Runs every minute for precise timing
+ * - Notifies only when meetings are actually starting (within ±90 seconds)
+ * - Sends only ONE notification per meeting (prevents duplicate alerts)
  * - Posts to specific SIG channels + #community (except Community Meeting which only goes to #community)
  * - Includes Google Meet links in visually appealing format
+ * - Automatic cleanup of old notification records
  * - Debug mode for testing message formatting
+ * 
+ * Timing Logic:
+ * - Searches for meetings starting within ±90 seconds of current time
+ * - Accounts for trigger timing variations (script may run a few seconds early/late)
+ * - Notifications sent AT meeting start time, not in advance
+ * 
+ * Storage Management:
+ * - Uses PropertiesService to track which meetings have been notified
+ * - Smart cleanup strategy adapts to current storage usage
+ * - Daily end-of-day cleanup (11:30 PM) removes records older than 6 hours
+ * - Emergency cleanup prevents hitting 50-property limit
+ * - Storage monitoring and health alerts
+ * - Prevents duplicate notifications when script runs every minute
  * 
  * Setup Instructions: See CALENDAR_MEETING_NOTIFIER.md
  */
@@ -19,26 +34,33 @@
 
 /**
  * Main function to check calendar and send notifications
- * Called by the scheduled trigger every 30 minutes
+ * Called by the scheduled trigger every minute
  */
 function checkCalendarAndNotify() {
   try {
     console.log('🕐 Starting calendar check at:', new Date().toISOString());
     
+    // Clean up old notification records periodically (every 10 minutes)
+    const currentMinute = new Date().getMinutes();
+    if (currentMinute % 10 === 0) {
+      console.log('🧹 Running cleanup of old notification records...');
+      cleanupOldNotificationRecords();
+    }
+    
     // Configuration should be loaded from config.js in this script
     
-    // Get calendar events for the next 30 minutes
-    const upcomingMeetings = getUpcomingMeetings(CONFIG);
+    // Get meetings starting RIGHT NOW (within ±90 seconds)
+    const meetingsStartingNow = getUpcomingMeetings(CONFIG);
     
-    if (upcomingMeetings.length === 0) {
-      console.log('📅 No upcoming meetings found');
+    if (meetingsStartingNow.length === 0) {
+      console.log('📅 No meetings starting now');
       return;
     }
     
-    console.log(`📅 Found ${upcomingMeetings.length} upcoming meeting(s)`);
+    console.log(`📅 Found ${meetingsStartingNow.length} meeting(s) starting NOW`);
     
     // Process each meeting
-    for (const meeting of upcomingMeetings) {
+    for (const meeting of meetingsStartingNow) {
       processMeeting(meeting, CONFIG);
     }
     
@@ -49,35 +71,18 @@ function checkCalendarAndNotify() {
 }
 
 /**
- * Get meetings starting within the next 30 minutes
+ * Get meetings starting RIGHT NOW (within ±90 seconds to account for trigger timing)
  */
 function getUpcomingMeetings() {
   try {
     const now = new Date();
     
-    // Find the nearest :00 or :30 time and search ±5 minutes around it
-    const currentMinute = now.getMinutes();
-    let targetTime;
-    
-    // Determine which :00 or :30 time we're closest to
-    if (currentMinute <= 15) {
-      // Closer to :00 (0-15 minutes)
-      targetTime = new Date(now.getFullYear(), now.getMonth(), now.getDate(), now.getHours(), 0, 0, 0);
-    } else if (currentMinute <= 45) {
-      // Closer to :30 (16-45 minutes)  
-      targetTime = new Date(now.getFullYear(), now.getMonth(), now.getDate(), now.getHours(), 30, 0, 0);
-    } else {
-      // Closer to next hour's :00 (46-59 minutes)
-      targetTime = new Date(now.getFullYear(), now.getMonth(), now.getDate(), now.getHours() + 1, 0, 0, 0);
-    }
-    
-    // Search ±5 minutes around the target time
-    const windowStart = new Date(targetTime.getTime() - (5 * 60 * 1000)); // 5 minutes before
-    const windowEnd = new Date(targetTime.getTime() + (5 * 60 * 1000));   // 5 minutes after
+    // Look for meetings starting within the next 3 minutes (broader search to find candidates)
+    const searchStart = new Date(now.getTime() - (90 * 1000)); // 90 seconds ago
+    const searchEnd = new Date(now.getTime() + (3 * 60 * 1000)); // 3 minutes from now
     
     console.log(`🕐 Current time: ${now.toLocaleTimeString()}`);
-    console.log(`🎯 Target time: ${targetTime.toLocaleTimeString()}`);
-    console.log(`📅 Search window (±5min): ${windowStart.toLocaleTimeString()} - ${windowEnd.toLocaleTimeString()}`);
+    console.log(`📅 Search window: ${searchStart.toLocaleTimeString()} - ${searchEnd.toLocaleTimeString()}`);
     
     // Get the calendar by ID (configured in CONFIG)
     const calendar = CalendarApp.getCalendarById(CONFIG.CALENDAR_ID);
@@ -86,40 +91,61 @@ function getUpcomingMeetings() {
       throw new Error(`Calendar not found with ID: ${CONFIG.CALENDAR_ID}`);
     }
     
-    // Get events in the current 30-minute window only
-    const events = calendar.getEvents(windowStart, windowEnd);
+    // Get events in the search window
+    const events = calendar.getEvents(searchStart, searchEnd);
     
-    const upcomingMeetings = [];
+    const meetingsStartingNow = [];
     
     for (const event of events) {
       const title = event.getTitle();
       const startTime = event.getStartTime();
       const meetingDetails = extractMeetingDetails(event);
       
-      // Check if this meeting matches any of our configured prefixes
-      const matchedConfig = findMatchingMeetingConfig(title);
+      // Calculate how many seconds until/since the meeting starts
+      const timeUntilStart = startTime.getTime() - now.getTime();
+      const secondsUntilStart = Math.floor(timeUntilStart / 1000);
       
-      if (matchedConfig) {
-        upcomingMeetings.push({
-          title: title,
-          startTime: startTime,
-          meetLink: meetingDetails.meetLink,
-          documents: meetingDetails.documents,
-          hasDocuments: meetingDetails.hasDocuments,
-          config: matchedConfig,
-          event: event
-        });
+      console.log(`📋 Checking meeting: "${title}"`);
+      console.log(`🕐 Meeting starts: ${startTime.toLocaleTimeString()}`);
+      console.log(`⏱️  Seconds until start: ${secondsUntilStart}`);
+      
+      // Only include meetings starting within ±90 seconds (to handle trigger timing variations)
+      if (Math.abs(secondsUntilStart) <= 90) {
+        console.log(`✅ Meeting is starting NOW (within ±90 seconds)`);
         
-        console.log(`📋 Found matching meeting: ${title} at ${startTime.toLocaleTimeString()}`);
+        // Check if this meeting matches any of our configured prefixes
+        const matchedConfig = findMatchingMeetingConfig(title);
+        
+        if (matchedConfig) {
+          meetingsStartingNow.push({
+            title: title,
+            startTime: startTime,
+            meetLink: meetingDetails.meetLink,
+            documents: meetingDetails.documents,
+            hasDocuments: meetingDetails.hasDocuments,
+            config: matchedConfig,
+            event: event
+          });
+          
+          console.log(`📋 Added to notification queue: ${title}`);
+        } else {
+          console.log(`⏭️ Meeting starting now but no config match: ${title}`);
+        }
       } else {
-        console.log(`⏭️ Meeting found but no config match: ${title} at ${startTime.toLocaleTimeString()}`);
+        console.log(`⏭️ Meeting not starting now (${secondsUntilStart}s away) - skipping`);
       }
     }
     
-    return upcomingMeetings;
+    if (meetingsStartingNow.length > 0) {
+      console.log(`🎯 Found ${meetingsStartingNow.length} meeting(s) starting NOW`);
+    } else {
+      console.log(`📅 No meetings starting within ±90 seconds of current time`);
+    }
+    
+    return meetingsStartingNow;
     
   } catch (error) {
-    console.error('❌ Error getting upcoming meetings:', error);
+    console.error('❌ Error getting meetings starting now:', error);
     throw error;
   }
 }
@@ -345,12 +371,168 @@ function findMatchingMeetingConfig(title) {
 }
 
 /**
+ * Get unique identifier for a meeting event to track notifications
+ */
+function getMeetingNotificationKey(meeting) {
+  // Use event ID combined with start time to create unique key
+  const eventId = meeting.event.getId();
+  const startTimeKey = meeting.startTime.toISOString();
+  return `notified_${eventId}_${startTimeKey}`;
+}
+
+/**
+ * Check if we have already sent notifications for this meeting
+ */
+function hasAlreadyNotified(meeting) {
+  const key = getMeetingNotificationKey(meeting);
+  const properties = PropertiesService.getScriptProperties();
+  const notificationRecord = properties.getProperty(key);
+  
+  if (notificationRecord) {
+    const recordData = JSON.parse(notificationRecord);
+    console.log(`✅ Already notified for meeting "${meeting.title}" at ${recordData.notifiedAt}`);
+    return true;
+  }
+  
+  return false;
+}
+
+/**
+ * Record that we have sent notifications for this meeting
+ */
+function recordNotificationSent(meeting) {
+  const key = getMeetingNotificationKey(meeting);
+  const properties = PropertiesService.getScriptProperties();
+  
+  const recordData = {
+    meetingTitle: meeting.title,
+    meetingStart: meeting.startTime.toISOString(),
+    notifiedAt: new Date().toISOString()
+  };
+  
+  properties.setProperty(key, JSON.stringify(recordData));
+  console.log(`📝 Recorded notification sent for meeting "${meeting.title}"`);
+}
+
+/**
+ * Clean up old notification records with smart aging strategy
+ * Prevents PropertiesService storage from hitting the 50 property limit
+ */
+function cleanupOldNotificationRecords() {
+  try {
+    const properties = PropertiesService.getScriptProperties();
+    const allProperties = properties.getProperties();
+    const now = new Date();
+    
+    // Count notification records to check against limits
+    const notificationRecords = [];
+    for (const [key, value] of Object.entries(allProperties)) {
+      if (key.startsWith('notified_')) {
+        try {
+          const recordData = JSON.parse(value);
+          notificationRecords.push({
+            key: key,
+            data: recordData,
+            notifiedTime: new Date(recordData.notifiedAt)
+          });
+        } catch (parseError) {
+          // Corrupted record - mark for deletion
+          notificationRecords.push({
+            key: key,
+            data: null,
+            notifiedTime: new Date(0) // Very old date to ensure deletion
+          });
+        }
+      }
+    }
+    
+    console.log(`📊 Current notification records: ${notificationRecords.length}/50 (PropertiesService limit)`);
+    
+    let cleanedCount = 0;
+    
+    // Strategy 1: Always remove corrupted records
+    const corruptedRecords = notificationRecords.filter(record => !record.data);
+    for (const record of corruptedRecords) {
+      properties.deleteProperty(record.key);
+      cleanedCount++;
+      console.log(`🧹 Cleaned up corrupted notification record: ${record.key}`);
+    }
+    
+    // Strategy 2: Aggressive cleanup based on current load
+    let cutoffHours;
+    if (notificationRecords.length >= 45) {
+      // Near limit - very aggressive cleanup (4 hours)
+      cutoffHours = 4;
+      console.log('⚠️ Near PropertiesService limit - using aggressive 4-hour cleanup');
+    } else if (notificationRecords.length >= 30) {
+      // Getting full - moderate cleanup (8 hours) 
+      cutoffHours = 8;
+      console.log('📈 Storage getting full - using 8-hour cleanup');
+    } else {
+      // Normal cleanup (24 hours)
+      cutoffHours = 24;
+    }
+    
+    const cutoffTime = new Date(now.getTime() - (cutoffHours * 60 * 60 * 1000));
+    
+    // Strategy 3: Time-based cleanup
+    for (const record of notificationRecords) {
+      if (record.data && record.notifiedTime < cutoffTime) {
+        properties.deleteProperty(record.key);
+        cleanedCount++;
+        console.log(`🧹 Cleaned up old notification record (${cutoffHours}h): ${record.data.meetingTitle}`);
+      }
+    }
+    
+    // Strategy 4: Emergency cleanup if still near limit
+    const remainingRecords = notificationRecords.length - cleanedCount;
+    if (remainingRecords >= 48) { // Leave room for new meetings
+      console.log('🚨 EMERGENCY: Still near limit after cleanup - removing oldest records');
+      
+      // Sort by notification time and remove oldest
+      const sortedRecords = notificationRecords
+        .filter(record => record.data) // Only valid records
+        .sort((a, b) => a.notifiedTime - b.notifiedTime);
+      
+      const recordsToRemove = remainingRecords - 40; // Keep it well under 50
+      for (let i = 0; i < recordsToRemove && i < sortedRecords.length; i++) {
+        const record = sortedRecords[i];
+        properties.deleteProperty(record.key);
+        cleanedCount++;
+        console.log(`🚨 Emergency cleanup: ${record.data.meetingTitle}`);
+      }
+    }
+    
+    if (cleanedCount > 0) {
+      console.log(`🧹 Cleaned up ${cleanedCount} notification record(s) using ${cutoffHours}h cutoff`);
+      
+      // Send alert if we had to use aggressive cleanup
+      if (cutoffHours < 24) {
+        const remainingAfterCleanup = notificationRecords.length - cleanedCount;
+        sendDebugMessage(`⚠️ Used aggressive cleanup (${cutoffHours}h) - had ${notificationRecords.length} records, now ${remainingAfterCleanup}`);
+      }
+    } else {
+      console.log(`✅ No cleanup needed - ${notificationRecords.length} records, ${cutoffHours}h cutoff`);
+    }
+    
+  } catch (error) {
+    console.error('❌ Error cleaning up notification records:', error);
+  }
+}
+
+/**
  * Process a single meeting and send notifications
  */
 function processMeeting(meeting) {
   try {
     console.log(`📋 Processing meeting: ${meeting.title}`);
     console.log(`🕐 Start time: ${meeting.startTime}`);
+    
+    // Check if we've already sent notifications for this meeting
+    if (hasAlreadyNotified(meeting)) {
+      console.log(`⏭️ Skipping notifications - already sent for "${meeting.title}"`);
+      return;
+    }
     
     // Determine which channels to notify
     const channelsToNotify = getChannelsToNotify(meeting.config);
@@ -360,6 +542,9 @@ function processMeeting(meeting) {
       const message = formatSlackMessage(meeting, channel.name);
       sendSlackNotification(channel.webhook, message, channel.name);
     }
+    
+    // Record that we've sent notifications for this meeting
+    recordNotificationSent(meeting);
     
   } catch (error) {
     console.error(`❌ Error processing meeting ${meeting.title}:`, error);
@@ -430,13 +615,13 @@ function formatSlackMessage(meeting, targetChannel) {
   // Create the main message text with status
   let messageText;
   
-  // Keep the same simple messaging regardless of timing
+  // Meeting is starting right now
   if (isSigMeeting && isCommunityChannel) {
     // SIG meeting posted to community channel - include channel link
-    messageText = `:bell: Reminder: The weekly public llm-d ${sigName} meeting is starting NOW.\n\nJoin the ${meeting.config.slackChannel} channel for detailed discussion.`;
+    messageText = `:bell: The weekly public llm-d ${sigName} meeting is starting NOW!\n\nJoin the ${meeting.config.slackChannel} channel for detailed discussion.`;
   } else {
     // SIG meeting posted to SIG channel OR Community meeting - use simple format
-    messageText = `:bell: Reminder: The weekly public llm-d ${sigName} meeting is starting NOW. Join us!`;
+    messageText = `:bell: The weekly public llm-d ${sigName} meeting is starting NOW! Join us!`;
   }
   
   // Add Google Meet link if available
@@ -593,48 +778,34 @@ function testTimingWindow() {
   console.log('🕐 Testing timing window logic...');
   
   const now = new Date();
-  const currentMinute = now.getMinutes();
   
-  // Find the nearest :00 or :30 time (same logic as main function)
-  let targetTime;
-  if (currentMinute <= 15) {
-    targetTime = new Date(now.getFullYear(), now.getMonth(), now.getDate(), now.getHours(), 0, 0, 0);
-  } else if (currentMinute <= 45) {
-    targetTime = new Date(now.getFullYear(), now.getMonth(), now.getDate(), now.getHours(), 30, 0, 0);
-  } else {
-    targetTime = new Date(now.getFullYear(), now.getMonth(), now.getDate(), now.getHours() + 1, 0, 0, 0);
-  }
-  
-  const searchStart = new Date(targetTime.getTime() - (5 * 60 * 1000));
-  const searchEnd = new Date(targetTime.getTime() + (5 * 60 * 1000));
+  // Current logic: Look for meetings starting within ±90 seconds of now
+  const searchStart = new Date(now.getTime() - (90 * 1000)); // 90 seconds ago
+  const searchEnd = new Date(now.getTime() + (3 * 60 * 1000)); // 3 minutes from now
+  const notifyStart = new Date(now.getTime() - (90 * 1000)); // 90 seconds ago
+  const notifyEnd = new Date(now.getTime() + (90 * 1000)); // 90 seconds from now
   
   console.log(`🕐 Current time: ${now.toLocaleTimeString()}`);
-  console.log(`🎯 Target time: ${targetTime.toLocaleTimeString()}`);
-  console.log(`📅 Search window (±5min): ${searchStart.toLocaleTimeString()} - ${searchEnd.toLocaleTimeString()}`);
-  console.log(`✅ Simple ±5 minute window around nearest :00 or :30 time`);
+  console.log(`📅 Search window (3min): ${searchStart.toLocaleTimeString()} - ${searchEnd.toLocaleTimeString()}`);
+  console.log(`🎯 Notification window (±90s): ${notifyStart.toLocaleTimeString()} - ${notifyEnd.toLocaleTimeString()}`);
+  console.log(`✅ Only meetings starting within ±90 seconds get notifications`);
   
-  // Show examples of what would happen at different run times
-  const exampleRunTimes = [
-    { time: new Date(now.getFullYear(), now.getMonth(), now.getDate(), 14, 2, 0), desc: '2:02 PM' },
-    { time: new Date(now.getFullYear(), now.getMonth(), now.getDate(), 14, 27, 0), desc: '2:27 PM' },
-    { time: new Date(now.getFullYear(), now.getMonth(), now.getDate(), 14, 35, 0), desc: '2:35 PM' },
-    { time: new Date(now.getFullYear(), now.getMonth(), now.getDate(), 14, 55, 0), desc: '2:55 PM' }
+  // Show examples of what would happen with meetings at different times
+  const exampleMeetings = [
+    { startTime: new Date(now.getTime() - (2 * 60 * 1000)), desc: '2 minutes ago' },
+    { startTime: new Date(now.getTime() - (60 * 1000)), desc: '1 minute ago' },
+    { startTime: new Date(now.getTime()), desc: 'right now' },
+    { startTime: new Date(now.getTime() + (60 * 1000)), desc: 'in 1 minute' },
+    { startTime: new Date(now.getTime() + (2 * 60 * 1000)), desc: 'in 2 minutes' }
   ];
   
-  console.log('\n📋 Examples of timing logic:');
-  for (const example of exampleRunTimes) {
-    const minute = example.time.getMinutes();
-    let target;
-    if (minute <= 15) {
-      target = new Date(example.time.getFullYear(), example.time.getMonth(), example.time.getDate(), example.time.getHours(), 0, 0, 0);
-    } else if (minute <= 45) {
-      target = new Date(example.time.getFullYear(), example.time.getMonth(), example.time.getDate(), example.time.getHours(), 30, 0, 0);
-    } else {
-      target = new Date(example.time.getFullYear(), example.time.getMonth(), example.time.getDate(), example.time.getHours() + 1, 0, 0, 0);
-    }
-    const start = new Date(target.getTime() - (5 * 60 * 1000));
-    const end = new Date(target.getTime() + (5 * 60 * 1000));
-    console.log(`   Script at ${example.desc} → Target: ${target.toLocaleTimeString()} → Search: ${start.toLocaleTimeString()}-${end.toLocaleTimeString()}`);
+  console.log('\n📋 Examples of meeting timing:');
+  for (const meeting of exampleMeetings) {
+    const timeUntilStart = meeting.startTime.getTime() - now.getTime();
+    const secondsUntilStart = Math.floor(timeUntilStart / 1000);
+    const wouldNotify = Math.abs(secondsUntilStart) <= 90;
+    
+    console.log(`   Meeting starting ${meeting.desc} (${secondsUntilStart}s): ${wouldNotify ? '✅ NOTIFY' : '❌ Skip'}`);
   }
 }
 
@@ -874,6 +1045,260 @@ function testNextMeetingNotification() {
     if (typeof originalDebugMode !== 'undefined') {
       CONFIG.DEBUG_MODE = originalDebugMode;
     }
+  }
+}
+
+/**
+ * Daily cleanup function - more thorough cleanup at end of business day
+ * Call this once per day (e.g., at 11:59 PM) to ensure storage stays clean
+ */
+function dailyCleanupNotificationRecords() {
+  try {
+    console.log('🌅 Running daily cleanup of notification records...');
+    
+    const properties = PropertiesService.getScriptProperties();
+    const allProperties = properties.getProperties();
+    const now = new Date();
+    
+    // For daily cleanup, remove anything older than 6 hours (very aggressive)
+    const cutoffTime = new Date(now.getTime() - (6 * 60 * 60 * 1000));
+    
+    let cleanedCount = 0;
+    let totalRecords = 0;
+    
+    for (const [key, value] of Object.entries(allProperties)) {
+      if (key.startsWith('notified_')) {
+        totalRecords++;
+        try {
+          const recordData = JSON.parse(value);
+          const notifiedTime = new Date(recordData.notifiedAt);
+          
+          if (notifiedTime < cutoffTime) {
+            properties.deleteProperty(key);
+            cleanedCount++;
+            console.log(`🌅 Daily cleanup: ${recordData.meetingTitle}`);
+          }
+        } catch (parseError) {
+          // Remove corrupted records
+          properties.deleteProperty(key);
+          cleanedCount++;
+          console.log(`🌅 Daily cleanup: Removed corrupted record ${key}`);
+        }
+      }
+    }
+    
+    console.log(`🌅 Daily cleanup completed: Removed ${cleanedCount}/${totalRecords} records`);
+    
+    // Report storage health - only alert if there are issues
+    const remainingRecords = totalRecords - cleanedCount;
+    if (remainingRecords > 30) {
+      sendDebugMessage(`⚠️ Storage still high after daily cleanup: ${remainingRecords}/50 records remaining`);
+    } else {
+      console.log(`✅ Storage healthy after daily cleanup: ${remainingRecords}/50 records`);
+    }
+    
+  } catch (error) {
+    console.error('❌ Error in daily cleanup:', error);
+    sendErrorNotification('Daily cleanup failed', error.toString());
+  }
+}
+
+/**
+ * Setup function to create both regular and daily cleanup triggers
+ * Run this once to enable automatic cleanup
+ */
+function setupCleanupTriggers() {
+  try {
+    console.log('⚙️ Setting up cleanup triggers...');
+    
+    // Delete existing cleanup triggers
+    const triggers = ScriptApp.getProjectTriggers();
+    for (const trigger of triggers) {
+      if (trigger.getHandlerFunction() === 'dailyCleanupNotificationRecords') {
+        ScriptApp.deleteTrigger(trigger);
+      }
+    }
+    
+    // Create daily cleanup trigger (runs at 11:30 PM every day)
+    ScriptApp.newTrigger('dailyCleanupNotificationRecords')
+      .timeBased()
+      .everyDays(1)
+      .atHour(23)  // 11 PM
+      .nearMinute(30) // 11:30 PM
+      .create();
+    
+    console.log('✅ Daily cleanup trigger created - will run at 11:30 PM every day');
+    
+  } catch (error) {
+    console.error('❌ Error setting up cleanup triggers:', error);
+    sendErrorNotification('Failed to setup cleanup triggers', error.toString());
+  }
+}
+
+/**
+ * Clear all notification records (for testing purposes)
+ * Use this if you want to test notifications for meetings that have already been notified
+ */
+function clearAllNotificationRecords() {
+  try {
+    console.log('🧪 Clearing all notification records...');
+    
+    const properties = PropertiesService.getScriptProperties();
+    const allProperties = properties.getProperties();
+    let clearedCount = 0;
+    
+    for (const key of Object.keys(allProperties)) {
+      if (key.startsWith('notified_')) {
+        properties.deleteProperty(key);
+        clearedCount++;
+      }
+    }
+    
+    console.log(`✅ Cleared ${clearedCount} notification record(s)`);
+    sendDebugMessage(`Cleared ${clearedCount} notification records for testing`);
+    
+  } catch (error) {
+    console.error('❌ Error clearing notification records:', error);
+  }
+}
+
+/**
+ * Monitor PropertiesService storage health and usage
+ */
+function monitorStorageHealth() {
+  try {
+    console.log('📊 Monitoring PropertiesService storage health...');
+    
+    const properties = PropertiesService.getScriptProperties();
+    const allProperties = properties.getProperties();
+    
+    let notificationRecords = 0;
+    let otherProperties = 0;
+    let oldestRecord = null;
+    let newestRecord = null;
+    let corruptedRecords = 0;
+    
+    for (const [key, value] of Object.entries(allProperties)) {
+      if (key.startsWith('notified_')) {
+        notificationRecords++;
+        try {
+          const recordData = JSON.parse(value);
+          const notifiedTime = new Date(recordData.notifiedAt);
+          
+          if (!oldestRecord || notifiedTime < oldestRecord.time) {
+            oldestRecord = { time: notifiedTime, title: recordData.meetingTitle };
+          }
+          if (!newestRecord || notifiedTime > newestRecord.time) {
+            newestRecord = { time: notifiedTime, title: recordData.meetingTitle };
+          }
+        } catch (parseError) {
+          corruptedRecords++;
+        }
+      } else {
+        otherProperties++;
+      }
+    }
+    
+    const totalProperties = notificationRecords + otherProperties;
+    const utilizationPercent = Math.round((totalProperties / 50) * 100);
+    
+    console.log('='.repeat(50));
+    console.log('📊 PROPERTIES SERVICE STORAGE REPORT');
+    console.log('='.repeat(50));
+    console.log(`📦 Total properties: ${totalProperties}/50 (${utilizationPercent}% full)`);
+    console.log(`📝 Notification records: ${notificationRecords}`);
+    console.log(`⚙️  Other properties: ${otherProperties}`);
+    console.log(`❌ Corrupted records: ${corruptedRecords}`);
+    
+    if (oldestRecord) {
+      const hoursOld = Math.floor((new Date() - oldestRecord.time) / (1000 * 60 * 60));
+      console.log(`⏰ Oldest record: ${oldestRecord.title} (${hoursOld}h old)`);
+    }
+    
+    if (newestRecord) {
+      const minutesOld = Math.floor((new Date() - newestRecord.time) / (1000 * 60));
+      console.log(`⏰ Newest record: ${newestRecord.title} (${minutesOld}m old)`);
+    }
+    
+    // Health assessment
+    let healthStatus = '🟢 HEALTHY';
+    let recommendations = [];
+    
+    if (utilizationPercent >= 90) {
+      healthStatus = '🔴 CRITICAL';
+      recommendations.push('Run emergency cleanup immediately');
+      recommendations.push('Consider shorter retention period');
+    } else if (utilizationPercent >= 70) {
+      healthStatus = '🟡 WARNING';
+      recommendations.push('Monitor closely');
+      recommendations.push('Consider running daily cleanup more frequently');
+    } else if (utilizationPercent >= 50) {
+      healthStatus = '🟡 MODERATE';
+      recommendations.push('Storage usage is moderate');
+    }
+    
+    if (corruptedRecords > 0) {
+      recommendations.push(`Clean up ${corruptedRecords} corrupted records`);
+    }
+    
+    console.log(`📊 Health status: ${healthStatus}`);
+    
+    if (recommendations.length > 0) {
+      console.log('💡 Recommendations:');
+      recommendations.forEach((rec, index) => {
+        console.log(`   ${index + 1}. ${rec}`);
+      });
+    }
+    
+    console.log('='.repeat(50));
+    
+    // Send Slack notification if storage is getting full
+    if (utilizationPercent >= 80) {
+      sendDebugMessage(`⚠️ PropertiesService storage is ${utilizationPercent}% full (${totalProperties}/50 properties)\nOldest record: ${oldestRecord?.title} (${Math.floor((new Date() - oldestRecord?.time) / (1000 * 60 * 60))}h old)`);
+    }
+    
+  } catch (error) {
+    console.error('❌ Error monitoring storage health:', error);
+  }
+}
+
+/**
+ * List all current notification records (for debugging)
+ */
+function listNotificationRecords() {
+  try {
+    console.log('📋 Listing all notification records...');
+    
+    const properties = PropertiesService.getScriptProperties();
+    const allProperties = properties.getProperties();
+    let recordCount = 0;
+    
+    for (const [key, value] of Object.entries(allProperties)) {
+      if (key.startsWith('notified_')) {
+        try {
+          const recordData = JSON.parse(value);
+          const hoursOld = Math.floor((new Date() - new Date(recordData.notifiedAt)) / (1000 * 60 * 60));
+          console.log(`📝 ${recordData.meetingTitle} - ${hoursOld}h ago (${recordData.notifiedAt})`);
+          recordCount++;
+        } catch (parseError) {
+          console.log(`❌ Corrupted record: ${key}`);
+          recordCount++;
+        }
+      }
+    }
+    
+    console.log(`📊 Total notification records: ${recordCount}/50`);
+    
+    if (recordCount === 0) {
+      console.log('✨ No notification records found - all meetings will trigger notifications');
+    }
+    
+    // Show storage utilization
+    const utilizationPercent = Math.round((recordCount / 50) * 100);
+    console.log(`📦 Storage utilization: ${utilizationPercent}%`);
+    
+  } catch (error) {
+    console.error('❌ Error listing notification records:', error);
   }
 }
 
