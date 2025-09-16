@@ -6,7 +6,7 @@
  * 
  * Features:
  * - Runs every minute for precise timing
- * - Notifies only when meetings are actually starting (within ±90 seconds)
+ * - Notifies only when meetings are actually starting (1min early to 15sec late window)
  * - Sends only ONE notification per meeting (prevents duplicate alerts)
  * - Posts to specific SIG channels + #community (except Community Meeting which only goes to #community)
  * - Includes Google Meet links in visually appealing format
@@ -14,9 +14,9 @@
  * - Debug mode for testing message formatting
  * 
  * Timing Logic:
- * - Searches for meetings starting within ±90 seconds of current time
- * - Accounts for trigger timing variations (script may run a few seconds early/late)
- * - Notifications sent AT meeting start time, not in advance
+ * - Searches for meetings starting within 1 minute early to 15 seconds late of current time
+ * - Prevents early notifications while accounting for trigger timing variations
+ * - Notifications sent AT meeting start time, with minimal early notification window
  * 
  * Storage Management:
  * - Uses PropertiesService to track which meetings have been notified
@@ -49,7 +49,7 @@ function checkCalendarAndNotify() {
     
     // Configuration should be loaded from config.js in this script
     
-    // Get meetings starting RIGHT NOW (within ±90 seconds)
+    // Get meetings starting RIGHT NOW (within tighter notification window)
     const meetingsStartingNow = getUpcomingMeetings(CONFIG);
     
     if (meetingsStartingNow.length === 0) {
@@ -71,7 +71,7 @@ function checkCalendarAndNotify() {
 }
 
 /**
- * Get meetings starting RIGHT NOW (within ±90 seconds to account for trigger timing)
+ * Get meetings starting RIGHT NOW (within tighter 1min early to 15sec late window)
  */
 function getUpcomingMeetings() {
   try {
@@ -109,9 +109,10 @@ function getUpcomingMeetings() {
       console.log(`🕐 Meeting starts: ${startTime.toLocaleTimeString()}`);
       console.log(`⏱️  Seconds until start: ${secondsUntilStart}`);
       
-      // Only include meetings starting within ±90 seconds (to handle trigger timing variations)
-      if (Math.abs(secondsUntilStart) <= 90) {
-        console.log(`✅ Meeting is starting NOW (within ±90 seconds)`);
+      // Only include meetings starting within 1 minute early to 15 seconds late (tighter window)
+      // This prevents 2-minute early notifications while still allowing for trigger timing variations
+      if (secondsUntilStart >= -60 && secondsUntilStart <= 15) {
+        console.log(`✅ Meeting is starting NOW (within 1min early to 15sec late)`);
         
         // Check if this meeting matches any of our configured prefixes
         const matchedConfig = findMatchingMeetingConfig(title);
@@ -139,7 +140,7 @@ function getUpcomingMeetings() {
     if (meetingsStartingNow.length > 0) {
       console.log(`🎯 Found ${meetingsStartingNow.length} meeting(s) starting NOW`);
     } else {
-      console.log(`📅 No meetings starting within ±90 seconds of current time`);
+      console.log(`📅 No meetings starting within notification window (1min early to 15sec late)`);
     }
     
     return meetingsStartingNow;
@@ -779,16 +780,16 @@ function testTimingWindow() {
   
   const now = new Date();
   
-  // Current logic: Look for meetings starting within ±90 seconds of now
+  // Current logic: Look for meetings starting within tighter notification window
   const searchStart = new Date(now.getTime() - (90 * 1000)); // 90 seconds ago
   const searchEnd = new Date(now.getTime() + (3 * 60 * 1000)); // 3 minutes from now
-  const notifyStart = new Date(now.getTime() - (90 * 1000)); // 90 seconds ago
-  const notifyEnd = new Date(now.getTime() + (90 * 1000)); // 90 seconds from now
+  const notifyStart = new Date(now.getTime() - (60 * 1000)); // 60 seconds ago (1min early)
+  const notifyEnd = new Date(now.getTime() + (15 * 1000)); // 15 seconds from now
   
   console.log(`🕐 Current time: ${now.toLocaleTimeString()}`);
   console.log(`📅 Search window (3min): ${searchStart.toLocaleTimeString()} - ${searchEnd.toLocaleTimeString()}`);
-  console.log(`🎯 Notification window (±90s): ${notifyStart.toLocaleTimeString()} - ${notifyEnd.toLocaleTimeString()}`);
-  console.log(`✅ Only meetings starting within ±90 seconds get notifications`);
+  console.log(`🎯 Notification window (1min early-15sec late): ${notifyStart.toLocaleTimeString()} - ${notifyEnd.toLocaleTimeString()}`);
+  console.log(`✅ Only meetings starting within tighter window get notifications`);
   
   // Show examples of what would happen with meetings at different times
   const exampleMeetings = [
@@ -803,7 +804,7 @@ function testTimingWindow() {
   for (const meeting of exampleMeetings) {
     const timeUntilStart = meeting.startTime.getTime() - now.getTime();
     const secondsUntilStart = Math.floor(timeUntilStart / 1000);
-    const wouldNotify = Math.abs(secondsUntilStart) <= 90;
+    const wouldNotify = secondsUntilStart >= -60 && secondsUntilStart <= 15;
     
     console.log(`   Meeting starting ${meeting.desc} (${secondsUntilStart}s): ${wouldNotify ? '✅ NOTIFY' : '❌ Skip'}`);
   }
