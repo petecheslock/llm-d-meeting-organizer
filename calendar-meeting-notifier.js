@@ -99,7 +99,6 @@ function getUpcomingMeetings() {
     for (const event of events) {
       const title = event.getTitle();
       const startTime = event.getStartTime();
-      const meetingDetails = extractMeetingDetails(event);
       
       // Calculate how many seconds until/since the meeting starts
       const timeUntilStart = startTime.getTime() - now.getTime();
@@ -118,6 +117,15 @@ function getUpcomingMeetings() {
         const matchedConfig = findMatchingMeetingConfig(title);
         
         if (matchedConfig) {
+          // EARLY CACHE CHECK: Skip expensive processing if already notified
+          if (hasAlreadyNotifiedEvent(event)) {
+            console.log(`⏭️ Skipping - already notified for "${title}"`);
+            continue;
+          }
+          
+          // Only do expensive meeting details extraction if we haven't notified yet
+          const meetingDetails = extractMeetingDetails(event);
+          
           meetingsStartingNow.push({
             title: title,
             startTime: startTime,
@@ -379,6 +387,33 @@ function getMeetingNotificationKey(meeting) {
   const eventId = meeting.event.getId();
   const startTimeKey = meeting.startTime.toISOString();
   return `notified_${eventId}_${startTimeKey}`;
+}
+
+/**
+ * Get unique identifier for a meeting using basic event info (for early cache check)
+ */
+function getMeetingNotificationKeyFromEvent(event) {
+  // Use event ID combined with start time to create unique key
+  const eventId = event.getId();
+  const startTimeKey = event.getStartTime().toISOString();
+  return `notified_${eventId}_${startTimeKey}`;
+}
+
+/**
+ * Check if we have already sent notifications for this event (early check without full processing)
+ */
+function hasAlreadyNotifiedEvent(event) {
+  const key = getMeetingNotificationKeyFromEvent(event);
+  const properties = PropertiesService.getScriptProperties();
+  const notificationRecord = properties.getProperty(key);
+  
+  if (notificationRecord) {
+    const recordData = JSON.parse(notificationRecord);
+    console.log(`✅ Already notified for event "${event.getTitle()}" at ${recordData.notifiedAt}`);
+    return true;
+  }
+  
+  return false;
 }
 
 /**
