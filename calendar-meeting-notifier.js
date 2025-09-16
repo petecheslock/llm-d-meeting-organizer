@@ -619,10 +619,10 @@ function formatSlackMessage(meeting, targetChannel) {
   // Meeting is starting right now
   if (isSigMeeting && isCommunityChannel) {
     // SIG meeting posted to community channel - include channel link
-    messageText = `:bell: The weekly public llm-d ${sigName} meeting is starting NOW!\n\nJoin the ${meeting.config.slackChannel} channel for detailed discussion.`;
+    messageText = `:bell: The weekly public llm-d ${sigName} meeting is starting.\n\nJoin the ${meeting.config.slackChannel} channel for detailed discussion.`;
   } else {
     // SIG meeting posted to SIG channel OR Community meeting - use simple format
-    messageText = `:bell: The weekly public llm-d ${sigName} meeting is starting NOW! Join us!`;
+    messageText = `:bell: The weekly public llm-d ${sigName} meeting is starting. Join us!`;
   }
   
   // Add Google Meet link if available
