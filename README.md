@@ -6,8 +6,9 @@ Google Apps Script solutions for meeting management, including file organization
 
 ### Meeting File Organizer (`llm-d-meeting-organizer.js`)
 - Detects files with configured meeting patterns (e.g., `[PUBLIC] llm-d sig-*`)
-- Processes complete pairs: both "Notes by Gemini" and "Recording" files must be present
-- Moves files to target folders in Google Drive
+- Requires both "Notes by Gemini" and "Recording" files for regular meetings
+- Processes chat files independently without requiring pairs
+- Moves files to exact target folders in Google Drive
 - Sends Slack notifications to corresponding channels via webhooks
 - Sends error notifications to configured channel for issues
 - Runs every 15 minutes via time-based trigger
@@ -15,7 +16,7 @@ Google Apps Script solutions for meeting management, including file organization
 
 ### Calendar Meeting Notifier (`calendar-meeting-notifier.js`)
 - Monitors shared Google Calendar and sends Slack notifications when meetings start
-- Notifies at meeting start time (±90 seconds) with precise timing
+- Notifies at meeting start time (1 minute early to 15 seconds late) with precise timing
 - Prevents duplicate notifications with intelligent tracking system
 - Extracts Google Meet links and meeting documents from calendar events  
 - Sends different messages to SIG channels vs community channel
@@ -54,9 +55,10 @@ The application:
 1. Searches for files matching configured meeting patterns (e.g., `[PUBLIC] llm-d sig-*`, `[PUBLIC] llm-d Community Meeting`)
 2. Groups files by meeting configuration
 3. Only processes complete pairs where both "Notes by Gemini" and "Recording" files are present
-4. Moves all matching files to the exact target folder specified in configuration
-5. Posts notification to the corresponding Slack channel via webhook
-6. Supports debug mode for safe testing without file movement
+4. Processes chat files immediately without requiring pairs
+5. Moves all matching files to the exact target folder specified in configuration
+6. Posts notification to the corresponding Slack channel via webhook (skips notifications for Chat files)
+7. Supports debug mode for safe testing without file movement
 
 ## Prerequisites
 
@@ -85,25 +87,25 @@ The application:
 
 The Calendar Notifier sends notifications exactly when meetings start:
 
-1. **Precise Timing**: Runs every minute and notifies when meetings are starting (±90 seconds)
+1. **Precise Timing**: Runs every minute and notifies when meetings are starting (1 minute early to 15 seconds late)
 2. **Smart Detection**: Finds meetings starting within current timeframe, accounting for trigger variations
 3. **Duplicate Prevention**: Intelligent tracking prevents multiple notifications for the same meeting
 4. **Storage Management**: Multi-layered cleanup system prevents PropertiesService overflow
 
 **Examples:**
-- Meeting at 2:00:00 PM gets notified between 1:58:30-2:01:30 PM (when trigger first runs in that window)
+- Meeting at 2:00:00 PM gets notified between 1:59:00-2:00:15 PM (when trigger first runs in that window)
 - Each meeting gets exactly one notification when it starts
 - Old tracking records automatically cleaned up
 
 ## Security & Permissions
 
 ### File Organizer Requirements:
-- **Google Drive**: Read/write access to organize meeting files
-- **Slack**: Webhook URLs for file organization notifications
+- Google Drive: Read/write access to organize meeting files
+- Slack: Webhook URLs for file organization notifications
 
 ### Calendar Notifier Requirements:
-- **Google Calendar API**: Read calendar events and conference data
-- **Google Drive API**: Read file names for meeting documents  
-- **Slack**: Webhook URLs for meeting notifications
+- Google Calendar API: Read calendar events and conference data
+- Google Drive API: Read file names for meeting documents  
+- Slack: Webhook URLs for meeting notifications
 
 Both scripts use secure webhook-based Slack integration and read-only calendar access.
