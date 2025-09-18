@@ -100,6 +100,12 @@ function getUpcomingMeetings() {
       const title = event.getTitle();
       const startTime = event.getStartTime();
       
+      // Skip meetings with "Canceled" in the title (case-insensitive)
+      if (title.toLowerCase().includes('canceled')) {
+        console.log(`⏭️ Skipping canceled meeting: "${title}"`);
+        continue;
+      }
+      
       // Calculate how many seconds until/since the meeting starts
       const timeUntilStart = startTime.getTime() - now.getTime();
       const secondsUntilStart = Math.floor(timeUntilStart / 1000);
@@ -1017,6 +1023,13 @@ function testNextMeetingNotification() {
     for (const event of events) {
       const title = event.getTitle();
       const startTime = event.getStartTime();
+      
+      // Skip meetings with "Canceled" in the title (case-insensitive)
+      if (title.toLowerCase().includes('canceled')) {
+        console.log(`⏭️ Skipping canceled meeting: "${title}"`);
+        continue;
+      }
+      
       const meetingDetails = extractMeetingDetails(event);
       
       console.log(`📋 Checking event: "${title}" at ${startTime.toLocaleString()}`);

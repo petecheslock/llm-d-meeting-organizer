@@ -25,6 +25,7 @@ The script sends notifications when meetings are actually starting:
 ## Features
 
 - **Precise timing**: Notifications sent at meeting start time (±90 seconds)
+- **Canceled meetings filter**: Automatically ignores meetings with "Canceled" in the title (case-insensitive)
 - **Duplicate prevention**: Intelligent tracking ensures one notification per meeting
 - **Storage management**: Multi-layered cleanup prevents PropertiesService overflow
 - **Smart cleanup**: Adapts cleanup frequency based on storage usage (4h/8h/24h)
@@ -41,8 +42,32 @@ The script sends notifications when meetings are actually starting:
   - Posted to the specific SIG channel: "The weekly public llm-d sig-name meeting is starting NOW! Join us!"
   - Posted to #community channel: "The weekly public llm-d sig-name meeting is starting NOW! Join the #sig-channel channel for detailed discussion."
 - **Community Meeting**: Posted only to #community channel: "The weekly public llm-d Community Meeting is starting NOW! Join us!"
+- **Canceled Meetings**: Automatically ignored - no notifications sent for meetings with "Canceled" in the title
 - **Content**: Notifications include Google Meet links and attached documents when available
 - **Timing**: All notifications sent exactly when meetings begin, not in advance
+
+## Canceled Meetings Filter
+
+The system automatically ignores any meeting with "Canceled" in the title to prevent notifications for canceled events.
+
+### How It Works
+- **Case-insensitive matching**: Detects "Canceled", "canceled", "CANCELED", or any case variation
+- **Position-independent**: Works regardless of where "Canceled" appears in the title
+- **Early filtering**: Canceled meetings are skipped before any processing occurs (efficient)
+- **Logging**: Skipped meetings are logged as `⏭️ Skipping canceled meeting: "meeting title"`
+
+### Examples of Filtered Meetings
+✅ **These meetings will be ignored:**
+- `"Canceled - llm-d Community Meeting"`  
+- `"[PUBLIC] llm-d sig-autoscaling - Meeting Canceled"`
+- `"Meeting CANCELED due to holiday"`
+- `"Canceled: [PUBLIC] llm-d sig-benchmarking"`
+- `"sig-observability weekly - canceled this week"`
+
+✅ **These meetings will still be processed:**
+- `"[PUBLIC] llm-d sig-autoscaling: Weekly Planning"`
+- `"[PUBLIC] llm-d Community Meeting"`
+- `"Meeting about cancellation policies"` (word "cancellation" is different)
 
 ## Prerequisites
 
@@ -205,6 +230,7 @@ Set `DEBUG_MODE: true` in your config to:
 3. **"No meetings starting now"**
    - Run `debugListUpcomingEvents()` to see what events exist
    - Verify events have titles that match your configured prefixes
+   - Check that events don't have "Canceled" in the title (these are automatically filtered out)
    - Check that events are starting within ±90 seconds of current time
    - Use `testTimingWindow()` to understand the detection window
 
@@ -240,6 +266,10 @@ Ensure calendar events use the exact prefixes from your config:
 - `[PUBLIC] llm-d sig-autoscaling: Weekly Planning`
 - `[PUBLIC] llm-d Community Meeting`
 - `[PUBLIC] llm-d sig-benchmarking: Sprint Review`
+
+**Important**: Meetings with "Canceled" anywhere in the title are automatically ignored:
+- `Canceled - [PUBLIC] llm-d Community Meeting` → ❌ No notification
+- `[PUBLIC] llm-d sig-autoscaling - Meeting Canceled` → ❌ No notification
 
 ### Google Meet Links
 

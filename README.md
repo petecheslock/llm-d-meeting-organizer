@@ -17,6 +17,7 @@ Google Apps Script solutions for meeting management, including file organization
 ### Calendar Meeting Notifier (`calendar-meeting-notifier.js`)
 - Monitors shared Google Calendar and sends Slack notifications when meetings start
 - Notifies at meeting start time (1 minute early to 15 seconds late) with precise timing
+- Automatically ignores meetings with "Canceled" in the title (case-insensitive)
 - Prevents duplicate notifications with intelligent tracking system
 - Extracts Google Meet links and meeting documents from calendar events  
 - Sends different messages to SIG channels vs community channel
