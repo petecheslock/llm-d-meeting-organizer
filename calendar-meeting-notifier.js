@@ -871,12 +871,13 @@ function testCalendarNotifier() {
  * Debug version of the main function that forces debug mode
  */
 function checkCalendarAndNotifyDebug() {
+  // Store original debug mode outside try block to ensure it's available in finally
+  const originalDebugMode = CONFIG.DEBUG_MODE;
+  
   try {
     console.log('🕐 Starting calendar check at:', new Date().toISOString());
     
     // Force debug mode for testing
-    // Temporarily override CONFIG.DEBUG_MODE
-    const originalDebugMode = CONFIG.DEBUG_MODE;
     CONFIG.DEBUG_MODE = true;
     
     // Get calendar events for the next 30 minutes
@@ -989,6 +990,9 @@ function debugListUpcomingEvents() {
  * This helps you see what the actual Slack message will look like
  */
 function testNextMeetingNotification() {
+  // Store original debug mode outside try block to ensure it's available in catch
+  let originalDebugMode;
+  
   try {
     console.log('🧪 Testing notification for next upcoming meeting...');
     
@@ -999,7 +1003,7 @@ function testNextMeetingNotification() {
     }
     
     // Force debug mode for testing
-    const originalDebugMode = CONFIG.DEBUG_MODE;
+    originalDebugMode = CONFIG.DEBUG_MODE;
     CONFIG.DEBUG_MODE = true;
     
     // Look for meetings in the next 7 days to find upcoming meetings
